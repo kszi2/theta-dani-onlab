@@ -59,22 +59,22 @@ import java.util.*
  */
 class BoundedChecker<S : ExprState, A : ExprAction> @JvmOverloads constructor(
     private val monolithicExpr: MonolithicExpr,
-    private val shouldGiveUp: (Int) -> Boolean = { false },
     private val bmcSolver: Solver? = null,
-    private val bmcEnabled: () -> Boolean = { true },
-    private val lfPathOnly: () -> Boolean = { true },
     private val itpSolver: ItpSolver? = null,
-    private val imcEnabled: (Int) -> Boolean = { true },
     private val indSolver: Solver? = null,
-    private val kindEnabled: (Int) -> Boolean = { true },
+    private val shouldGiveUp: (Int) -> Boolean = { false },
+    private val lfPathOnly: () -> Boolean = { true },
+    private val bmcEnabled: () -> Boolean = { bmcSolver != null },
+    private val imcEnabled: (Int) -> Boolean = { itpSolver != null },
+    private val kindEnabled: (Int) -> Boolean = { indSolver != null },
     private val valToState: (Valuation) -> S,
     private val biValToAction: (Valuation, Valuation) -> A,
     private val logger: Logger,
 ) : SafetyChecker<S, A, UnitPrec> {
 
     private val vars = monolithicExpr.vars()
-    private val unfoldedInitExpr = PathUtils.unfold(monolithicExpr.initExpr, 0)
-    private val unfoldedPropExpr = { i: VarIndexing -> PathUtils.unfold(monolithicExpr.propExpr, i) }
+    private val unfoldedInitExpr = PathUtils.unfold(monolithicExpr.init(), 0)
+    private val unfoldedPropExpr = { i: VarIndexing -> PathUtils.unfold(monolithicExpr.prop(), i) }
     private val indices = mutableListOf(VarIndexingFactory.indexing(0))
     private val exprs = mutableListOf<Expr<BoolType>>()
     private var kindLastIterLookup = 0
@@ -95,9 +95,9 @@ class BoundedChecker<S : ExprState, A : ExprAction> @JvmOverloads constructor(
             iteration++
             logger.write(Logger.Level.MAINSTEP, "Starting iteration $iteration\n")
 
-            exprs.add(PathUtils.unfold(monolithicExpr.transExpr, indices.last()))
+            exprs.add(PathUtils.unfold(monolithicExpr.trans(), indices.last()))
 
-            indices.add(indices.last().add(monolithicExpr.offsetIndex))
+            indices.add(indices.last().add(monolithicExpr.offsetIndex()))
 
             if (isBmcEnabled) {
                 bmc()?.let { return it }

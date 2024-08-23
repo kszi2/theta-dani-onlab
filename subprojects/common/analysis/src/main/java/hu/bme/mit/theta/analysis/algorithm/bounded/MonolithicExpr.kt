@@ -16,20 +16,37 @@
 
 package hu.bme.mit.theta.analysis.algorithm.bounded
 
+import hu.bme.mit.theta.analysis.pred.PredPrec
 import hu.bme.mit.theta.core.decl.VarDecl
 import hu.bme.mit.theta.core.type.Expr
 import hu.bme.mit.theta.core.type.booltype.BoolType
 import hu.bme.mit.theta.core.utils.ExprUtils.getVars
 import hu.bme.mit.theta.core.utils.indexings.VarIndexing
 
-data class MonolithicExpr(
+interface MonolithicExpr {
+
+    fun init(): Expr<BoolType>
+    fun trans(): Expr<BoolType>
+    fun prop(): Expr<BoolType>
+    fun offsetIndex(): VarIndexing
+
+    fun vars(): Collection<VarDecl<*>> {
+        return getVars(init()) union getVars(trans()) union getVars(prop())
+    }
+}
+
+data class ConcreteMonolithicExpr(
     val initExpr: Expr<BoolType>,
     val transExpr: Expr<BoolType>,
     val propExpr: Expr<BoolType>,
     val offsetIndex: VarIndexing
-) {
+): MonolithicExpr {
+    override fun init(): Expr<BoolType> = initExpr
 
-    fun vars(): Collection<VarDecl<*>> {
-        return getVars(initExpr) union getVars(transExpr) union getVars(propExpr)
-    }
+    override fun trans(): Expr<BoolType> = transExpr
+
+    override fun prop(): Expr<BoolType> = propExpr
+
+    override fun offsetIndex(): VarIndexing = offsetIndex
+
 }
