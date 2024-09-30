@@ -17,36 +17,13 @@ import java.util.List;
 import static hu.bme.mit.theta.core.type.booltype.BoolExprs.Not;
 import static hu.bme.mit.theta.core.type.booltype.SmartBoolExprs.And;
 
-public class ReverseIc3Checker implements SafetyChecker {
-    private final MonolithicExpr monolithicExpr;
-    private final SolverFactory solverFactory;
+public class ReverseIc3Checker extends Ic3Checker {
 
+
+    public ReverseIc3Checker(MonolithicExpr monolithicExpr, SolverFactory solverFactory, boolean formerFramesOpt, boolean unSatOpt, boolean notBOpt, boolean propagateOpt, boolean filterOpt) {
+        super(new ConcreteMonolithicExpr(Not(monolithicExpr.prop()), new ExprReverser().reverse(monolithicExpr.trans()), Not(monolithicExpr.init()), monolithicExpr.offsetIndex()),solverFactory,formerFramesOpt,unSatOpt,notBOpt,propagateOpt,filterOpt);
+    }
     public ReverseIc3Checker(MonolithicExpr monolithicExpr, SolverFactory solverFactory) {
-        this.monolithicExpr = monolithicExpr;
-        this.solverFactory=solverFactory;
-    }
-
-    public Expr<BoolType> reverseTransition(Expr<BoolType> trans){
-        List<Expr<BoolType>> trans2 = new ArrayList<Expr<BoolType>>();
-        for(var ex : trans.getOps()){
-            if(ex.getOps().size()==2){
-
-                //Expr<BoolType> reverseEx = IffExpr.of((Expr<BoolType>) PrimeExpr.of(ex.getOps().get(1)), (Expr<BoolType>) ex.getOps().get(0).getOps().get(0));
-                Expr<BoolType> reverseEx = IffExpr.of((Expr<BoolType>) PrimeExpr.of(ex.getOps().get(1)), (Expr<BoolType>) ex.getOps().get(0));
-                trans2.add(reverseEx);
-            }else{
-                trans2.add((Expr<BoolType>) ex);
-            }
-
-        }
-        return And(trans2);
-    }
-
-    @Override
-    public SafetyResult check(Prec prec) {
-        ExprReverser exprReverser = new ExprReverser();
-        MonolithicExpr reverseMonolithicExpr = new ConcreteMonolithicExpr(Not(monolithicExpr.prop()), exprReverser.reverse(monolithicExpr.trans()), Not(monolithicExpr.init()), monolithicExpr.offsetIndex());
-        Ic3Checker ic3Checker = new Ic3Checker(reverseMonolithicExpr,this.solverFactory);
-        return ic3Checker.check(prec);
+        this(monolithicExpr, solverFactory, true, true, true, true, true);
     }
 }

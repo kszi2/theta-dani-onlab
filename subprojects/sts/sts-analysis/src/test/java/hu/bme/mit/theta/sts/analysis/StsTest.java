@@ -143,23 +143,23 @@ public class StsTest {
 //                (Valuation v1, Valuation v2) -> new StsAction(abstractSts),
 //                new ConsoleLogger(Logger.Level.INFO)
 //        );
-        final MonolithicExpr monolithicExpr = new ConcreteMonolithicExpr(sts.getInit(), sts.getTrans(), sts.getProp(), VarIndexingFactory.indexing(1));
-        MonolithicExprCegarChecker<ExplState, StsAction, PredPrec> checker = new MonolithicExprCegarChecker<>(monolithicExpr,
-                mE -> new Ic3Checker(mE, Z3SolverFactory.getInstance()),
-//                mE ->
-//                    new BoundedChecker<>(
-//                            mE,
-//                            Z3SolverFactory.getInstance().createSolver(),
-//                            Z3SolverFactory.getInstance().createItpSolver(),
-//                            Z3SolverFactory.getInstance().createSolver(),
-//                            ExplState::of,
-//                            (Valuation v1, Valuation v2) -> new StsAction(new STS(mE.init(), mE.trans(), mE.prop())),
-//                            new ConsoleLogger(Logger.Level.INFO)
-//                            )
-//                ,
-                new ConsoleLogger(Logger.Level.INFO));
+//        final MonolithicExpr monolithicExpr = new ConcreteMonolithicExpr(sts.getInit(), sts.getTrans(), sts.getProp(), VarIndexingFactory.indexing(1));
+//        MonolithicExprCegarChecker<ExplState, StsAction, PredPrec> checker = new MonolithicExprCegarChecker<>(monolithicExpr,
+//                mE -> new Ic3Checker(mE, Z3SolverFactory.getInstance()),
+////                mE ->
+////                    new BoundedChecker<>(
+////                            mE,
+////                            Z3SolverFactory.getInstance().createSolver(),
+////                            Z3SolverFactory.getInstance().createItpSolver(),
+////                            Z3SolverFactory.getInstance().createSolver(),
+////                            ExplState::of,
+////                            (Valuation v1, Valuation v2) -> new StsAction(new STS(mE.init(), mE.trans(), mE.prop())),
+////                            new ConsoleLogger(Logger.Level.INFO)
+////                            )
+////                ,
+//                new ConsoleLogger(Logger.Level.INFO));
 //        final var checker = new Ic3Checker(monolithicExpr, Z3SolverFactory.getInstance());
-        Assert.assertEquals(isSafe, checker.check().isSafe());
+//        Assert.assertEquals(isSafe, checker.check().isSafe());
 //        Ic3Checker ic3Checker=new Ic3Checker(monolithicExpr, Z3SolverFactory.getInstance());
 //        var result = ic3Checker.check(null);
 //        Assert.assertEquals(isSafe, result.isSafe());

@@ -25,6 +25,7 @@ import hu.bme.mit.theta.sts.STS;
 import hu.bme.mit.theta.sts.aiger.AigerParser;
 import hu.bme.mit.theta.sts.aiger.AigerToSts;
 import hu.bme.mit.theta.sts.analysis.ic3.Ic3Checker;
+import hu.bme.mit.theta.sts.analysis.ic3.ReverseIc3Checker;
 import hu.bme.mit.theta.sts.dsl.StsDslManager;
 import hu.bme.mit.theta.sts.dsl.StsSpec;
 import org.junit.Assert;

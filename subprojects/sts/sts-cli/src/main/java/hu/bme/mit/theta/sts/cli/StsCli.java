@@ -20,6 +20,7 @@ import com.beust.jcommander.Parameter;
 import com.beust.jcommander.ParameterException;
 import com.google.common.base.Stopwatch;
 import hu.bme.mit.theta.analysis.Trace;
+import hu.bme.mit.theta.analysis.algorithm.SafetyChecker;
 import hu.bme.mit.theta.analysis.algorithm.SafetyResult;
 import hu.bme.mit.theta.analysis.algorithm.bounded.ConcreteMonolithicExpr;
 import hu.bme.mit.theta.analysis.algorithm.bounded.MonolithicExpr;
@@ -55,6 +56,8 @@ import hu.bme.mit.theta.sts.analysis.config.StsConfigBuilder.PredSplit;
 import hu.bme.mit.theta.sts.analysis.config.StsConfigBuilder.Refinement;
 import hu.bme.mit.theta.sts.analysis.config.StsConfigBuilder.Search;
 import hu.bme.mit.theta.sts.analysis.ic3.ConnectedIc3Checker;
+import hu.bme.mit.theta.sts.analysis.ic3.Ic3Checker;
+import hu.bme.mit.theta.sts.analysis.ic3.ReverseIc3Checker;
 import hu.bme.mit.theta.sts.dsl.StsDslManager;
 import hu.bme.mit.theta.sts.dsl.StsSpec;
 
@@ -82,6 +85,33 @@ public class StsCli {
         IMC,
         IC3
     }
+
+    enum Direction {
+        Forward,
+        Reverse,
+        Connected
+    }
+
+
+
+
+    @Parameter(names = {"--notB"}, description = "Enables the not B optimalization")
+    Boolean notBOpt = false;
+
+    @Parameter(names = {"--former"}, description = "Enables the former frames optimalization")
+    Boolean formerFramesOpt = false;
+
+    @Parameter(names = {"--unSatOpt"}, description = "Enables the unSat core optimalization")
+    Boolean unSatOpt = false;
+
+    @Parameter(names = {"--propagate"}, description = "Enables the propagation optimalization")
+    Boolean propagateOpt = false;
+
+    @Parameter(names = {"--filter"}, description = "Enables the filter optimalization")
+    Boolean filterOpt = false;
+
+    @Parameter(names = {"--direction"}, description = "IC3 Direction")
+    Direction direction = Direction.Forward;
 
     @Parameter(names = {"--domain"}, description = "Abstract domain")
     Domain domain = Domain.PRED_CART;
@@ -168,8 +198,15 @@ public class StsCli {
                 final StsConfig<?, ?, ?> configuration = buildConfiguration(sts);
                 status = check(configuration);
             } else if(algorithm.equals(Algorithm.IC3)){
+                final SafetyChecker checker;
                 final MonolithicExpr monolithicExpr = new ConcreteMonolithicExpr(sts.getInit(), sts.getTrans(), sts.getProp(), VarIndexingFactory.indexing(1));
-                var checker = new ConnectedIc3Checker(monolithicExpr, Z3SolverFactory.getInstance());
+                if(direction.equals(Direction.Connected)){
+                    checker = new ConnectedIc3Checker(monolithicExpr,Z3SolverFactory.getInstance(),formerFramesOpt,unSatOpt,notBOpt,propagateOpt,filterOpt);
+                }else if(direction.equals(Direction.Reverse)){
+                    checker = new ReverseIc3Checker(monolithicExpr,Z3SolverFactory.getInstance(),formerFramesOpt,unSatOpt,notBOpt,propagateOpt,filterOpt);
+                }else{
+                    checker = new Ic3Checker(monolithicExpr,Z3SolverFactory.getInstance(),formerFramesOpt,unSatOpt,notBOpt,propagateOpt,filterOpt);
+                }
                 status = checker.check();
 
             }else {
