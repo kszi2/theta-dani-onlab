@@ -1,4 +1,4 @@
-package hu.bme.mit.theta.sts.analysis;
+package hu.bme.mit.theta.sts.analysis.ic3;
 
 import hu.bme.mit.theta.analysis.Prec;
 import hu.bme.mit.theta.analysis.algorithm.SafetyChecker;
@@ -9,7 +9,6 @@ import hu.bme.mit.theta.core.type.Expr;
 import hu.bme.mit.theta.core.type.anytype.PrimeExpr;
 import hu.bme.mit.theta.core.type.booltype.BoolType;
 import hu.bme.mit.theta.core.type.booltype.IffExpr;
-import hu.bme.mit.theta.core.utils.indexings.VarIndexingFactory;
 import hu.bme.mit.theta.solver.SolverFactory;
 
 import java.util.ArrayList;
@@ -31,6 +30,7 @@ public class ReverseIc3Checker implements SafetyChecker {
         List<Expr<BoolType>> trans2 = new ArrayList<Expr<BoolType>>();
         for(var ex : trans.getOps()){
             if(ex.getOps().size()==2){
+
                 //Expr<BoolType> reverseEx = IffExpr.of((Expr<BoolType>) PrimeExpr.of(ex.getOps().get(1)), (Expr<BoolType>) ex.getOps().get(0).getOps().get(0));
                 Expr<BoolType> reverseEx = IffExpr.of((Expr<BoolType>) PrimeExpr.of(ex.getOps().get(1)), (Expr<BoolType>) ex.getOps().get(0));
                 trans2.add(reverseEx);
@@ -44,7 +44,8 @@ public class ReverseIc3Checker implements SafetyChecker {
 
     @Override
     public SafetyResult check(Prec prec) {
-        MonolithicExpr reverseMonolithicExpr = new ConcreteMonolithicExpr(Not(monolithicExpr.prop()), reverseTransition(monolithicExpr.trans()), Not(monolithicExpr.init()), VarIndexingFactory.indexing(1));
+        ExprReverser exprReverser = new ExprReverser();
+        MonolithicExpr reverseMonolithicExpr = new ConcreteMonolithicExpr(Not(monolithicExpr.prop()), exprReverser.reverse(monolithicExpr.trans()), Not(monolithicExpr.init()), monolithicExpr.offsetIndex());
         Ic3Checker ic3Checker = new Ic3Checker(reverseMonolithicExpr,this.solverFactory);
         return ic3Checker.check(prec);
     }

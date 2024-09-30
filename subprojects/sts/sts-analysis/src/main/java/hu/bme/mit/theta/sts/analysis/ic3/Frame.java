@@ -1,4 +1,4 @@
-package hu.bme.mit.theta.sts.analysis;
+package hu.bme.mit.theta.sts.analysis.ic3;
 
 import hu.bme.mit.theta.analysis.algorithm.bounded.MonolithicExpr;
 import hu.bme.mit.theta.core.model.MutableValuation;
@@ -19,7 +19,7 @@ import static hu.bme.mit.theta.core.utils.ExprUtils.getConjuncts;
 
 public class Frame {
     private final Frame parent;
-    private final ArrayList<Expr<BoolType>> exprs;
+    private final Set<Expr<BoolType>> exprs;
 
     private final UCSolver solver;
     private final MonolithicExpr monolithicExpr;
@@ -28,7 +28,7 @@ public class Frame {
         this.parent = parent;
         this.solver = solver;
         this.monolithicExpr=monolithicExpr;
-        exprs = new ArrayList<>();
+        exprs = new HashSet<>();
     }
 
     public void refine(Expr<BoolType> expression) {
@@ -113,13 +113,13 @@ public class Frame {
 //        }
 //    }
 
-    public ArrayList<Expr<BoolType>> getExprs() {
+    public Set<Expr<BoolType>> getExprs() {
         return exprs;
     }
 
-    public Collection<Expr<BoolType>> check(Expr<BoolType> prop) {
+    public Collection<Expr<BoolType>> check(Expr<BoolType> target) {
         try (var wpp = new WithPushPop(solver)) {
-            solver.track(PathUtils.unfold(prop, 0));
+            solver.track(PathUtils.unfold(target, 0));
             for (Expr<BoolType> ex : exprs) {
                 solver.track(PathUtils.unfold(ex, 0));
             }

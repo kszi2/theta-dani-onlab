@@ -1,5 +1,6 @@
-package hu.bme.mit.theta.sts.analysis;
+package hu.bme.mit.theta.sts.analysis.ic3;
 
+import com.google.common.base.Preconditions;
 import hu.bme.mit.theta.analysis.Prec;
 import hu.bme.mit.theta.analysis.Trace;
 import hu.bme.mit.theta.analysis.algorithm.SafetyChecker;
@@ -16,8 +17,7 @@ import hu.bme.mit.theta.analysis.expr.refinement.ItpRefutation;
 import hu.bme.mit.theta.analysis.pred.PredPrec;
 import hu.bme.mit.theta.analysis.unit.UnitPrec;
 import hu.bme.mit.theta.common.logging.Logger;
-import hu.bme.mit.theta.solver.z3.Z3SolverFactory;
-import org.junit.Assert;
+import hu.bme.mit.theta.solver.SolverFactory;
 
 import java.util.List;
 import java.util.function.Function;
@@ -28,11 +28,14 @@ public class MonolithicExprCegarChecker<S extends ExprState, A extends ExprActio
     private MonolithicExpr model;
     private Function<MonolithicExpr, SafetyChecker<S, A, UnitPrec>> checkerFactory;
 
+    private SolverFactory solverFactory;
+
     private Logger logger;
-    public MonolithicExprCegarChecker(MonolithicExpr model, Function<MonolithicExpr, SafetyChecker<S, A, UnitPrec>> checkerFactory, Logger logger) {
+    public MonolithicExprCegarChecker(MonolithicExpr model, Function<MonolithicExpr, SafetyChecker<S, A, UnitPrec>> checkerFactory, Logger logger, SolverFactory solverFactory) {
         this.model=model;
         this.checkerFactory=checkerFactory;
         this.logger=logger;
+        this.solverFactory = solverFactory;
     }
     public SafetyResult<S,A> check(P initPrec){
         var predPrec = initPrec == null ? PredPrec.of(List.of(model.init(), model.prop())) : initPrec;
@@ -46,10 +49,10 @@ public class MonolithicExprCegarChecker<S extends ExprState, A extends ExprActio
                 logger.write(Logger.Level.INFO, "Model is safe, stopping CEGAR");
                 return SafetyResult.safe();
             } else {
-                Assert.assertEquals(false, result.isSafe());
+                Preconditions.checkState(false, result.isSafe());
                 final Trace<S, A> trace = result.asUnsafe().getTrace();
 
-                final ExprTraceChecker<ItpRefutation> exprTraceFwBinItpChecker = ExprTraceFwBinItpChecker.create(model.init(), Not(model.prop()), Z3SolverFactory.getInstance().createItpSolver());
+                final ExprTraceChecker<ItpRefutation> exprTraceFwBinItpChecker = ExprTraceFwBinItpChecker.create(model.init(), Not(model.prop()), solverFactory.createItpSolver());
 
                 if(trace != null){
                     final ExprTraceStatus<ItpRefutation> concretizationResult = exprTraceFwBinItpChecker.check(trace);

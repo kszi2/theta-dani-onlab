@@ -21,6 +21,8 @@ import com.beust.jcommander.ParameterException;
 import com.google.common.base.Stopwatch;
 import hu.bme.mit.theta.analysis.Trace;
 import hu.bme.mit.theta.analysis.algorithm.SafetyResult;
+import hu.bme.mit.theta.analysis.algorithm.bounded.ConcreteMonolithicExpr;
+import hu.bme.mit.theta.analysis.algorithm.bounded.MonolithicExpr;
 import hu.bme.mit.theta.analysis.algorithm.cegar.CegarStatistics;
 import hu.bme.mit.theta.analysis.expr.ExprState;
 import hu.bme.mit.theta.analysis.expr.refinement.PruneStrategy;
@@ -35,6 +37,7 @@ import hu.bme.mit.theta.common.table.TableWriter;
 import hu.bme.mit.theta.core.model.Valuation;
 import hu.bme.mit.theta.core.type.booltype.BoolExprs;
 import hu.bme.mit.theta.core.utils.ExprUtils;
+import hu.bme.mit.theta.core.utils.indexings.VarIndexingFactory;
 import hu.bme.mit.theta.solver.z3.Z3SolverFactory;
 import hu.bme.mit.theta.sts.STS;
 import hu.bme.mit.theta.sts.StsUtils;
@@ -51,6 +54,7 @@ import hu.bme.mit.theta.sts.analysis.config.StsConfigBuilder.InitPrec;
 import hu.bme.mit.theta.sts.analysis.config.StsConfigBuilder.PredSplit;
 import hu.bme.mit.theta.sts.analysis.config.StsConfigBuilder.Refinement;
 import hu.bme.mit.theta.sts.analysis.config.StsConfigBuilder.Search;
+import hu.bme.mit.theta.sts.analysis.ic3.ConnectedIc3Checker;
 import hu.bme.mit.theta.sts.dsl.StsDslManager;
 import hu.bme.mit.theta.sts.dsl.StsSpec;
 
@@ -75,7 +79,8 @@ public class StsCli {
     enum Algorithm {
         CEGAR,
         KINDUCTION,
-        IMC
+        IMC,
+        IC3
     }
 
     @Parameter(names = {"--domain"}, description = "Abstract domain")
@@ -162,14 +167,19 @@ public class StsCli {
             if (algorithm.equals(Algorithm.CEGAR)) {
                 final StsConfig<?, ?, ?> configuration = buildConfiguration(sts);
                 status = check(configuration);
-            } else {
+            } else if(algorithm.equals(Algorithm.IC3)){
+                final MonolithicExpr monolithicExpr = new ConcreteMonolithicExpr(sts.getInit(), sts.getTrans(), sts.getProp(), VarIndexingFactory.indexing(1));
+                var checker = new ConnectedIc3Checker(monolithicExpr, Z3SolverFactory.getInstance());
+                status = checker.check();
+
+            }else {
                 throw new UnsupportedOperationException("Algorithm " + algorithm + " not supported");
             }
             sw.stop();
-            printResult(status, sts, sw.elapsed(TimeUnit.MILLISECONDS));
-            if (status.isUnsafe() && cexfile != null) {
-                writeCex(sts, status.asUnsafe());
-            }
+            printIC3Result(status, sts, sw.elapsed(TimeUnit.MILLISECONDS));
+//            if (status.isUnsafe() && cexfile != null) {
+//                writeCex(sts, status.asUnsafe());
+//            }
         } catch (final Throwable ex) {
             printError(ex);
             System.exit(1);
@@ -188,8 +198,7 @@ public class StsCli {
     }
 
     private void printHeader() {
-        Stream.of("Result", "TimeMs", "AlgoTimeMs", "AbsTimeMs", "RefTimeMs", "Iterations",
-                        "ArgSize", "ArgDepth", "ArgMeanBranchFactor", "CexLen", "Vars", "Size")
+        Stream.of("Result", "TimeMs", "Vars", "Size")
                 .forEach(writer::cell);
         writer.newRow();
     }
@@ -243,6 +252,17 @@ public class StsCli {
             } else {
                 writer.cell("");
             }
+            writer.cell(sts.getVars().size());
+            writer.cell(ExprUtils.nodeCountSize(BoolExprs.And(sts.getInit(), sts.getTrans())));
+            writer.newRow();
+        }
+    }
+
+    private void printIC3Result(final SafetyResult<?, ?> status, final STS sts,
+                             final long totalTimeMs) {
+        if (benchmarkMode) {
+            writer.cell(status.isSafe());
+            writer.cell(totalTimeMs);
             writer.cell(sts.getVars().size());
             writer.cell(ExprUtils.nodeCountSize(BoolExprs.And(sts.getInit(), sts.getTrans())));
             writer.newRow();
