@@ -134,7 +134,7 @@ public class StepIc3Checker{
                     return true;
                 }
             }
-        } else if(frames.get(currentFrameNumber-1).equalsParent()){
+        } else if(currentFrameNumber>1 && frames.get(currentFrameNumber-1).equalsParent()){
             return true;
         }
         return false;

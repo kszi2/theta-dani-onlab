@@ -92,23 +92,48 @@ public class StsCli {
         Connected
     }
 
+    enum NotB {
+        Enabled,
+        Disabled
+    }
+
+    enum Former {
+        Enabled,
+        Disabled
+    }
+
+    enum UnSat {
+        Enabled,
+        Disabled
+    }
+
+    enum Propagate {
+        Enabled,
+        Disabled
+    }
+
+    enum Filter {
+        Enabled,
+        Disabled
+    }
+
 
 
 
     @Parameter(names = {"--notB"}, description = "Enables the not B optimalization")
-    Boolean notBOpt = false;
+    NotB notB = NotB.Enabled;
 
     @Parameter(names = {"--former"}, description = "Enables the former frames optimalization")
-    Boolean formerFramesOpt = false;
+    Former former = Former.Enabled;
 
     @Parameter(names = {"--unSatOpt"}, description = "Enables the unSat core optimalization")
-    Boolean unSatOpt = false;
+    UnSat unSat = UnSat.Enabled;
 
     @Parameter(names = {"--propagate"}, description = "Enables the propagation optimalization")
-    Boolean propagateOpt = false;
+    Propagate propagate = Propagate.Enabled;
 
     @Parameter(names = {"--filter"}, description = "Enables the filter optimalization")
-    Boolean filterOpt = false;
+    Filter filter = Filter.Enabled;
 
     @Parameter(names = {"--direction"}, description = "IC3 Direction")
     Direction direction = Direction.Forward;
@@ -200,6 +225,36 @@ public class StsCli {
             } else if(algorithm.equals(Algorithm.IC3)){
                 final SafetyChecker checker;
                 final MonolithicExpr monolithicExpr = new ConcreteMonolithicExpr(sts.getInit(), sts.getTrans(), sts.getProp(), VarIndexingFactory.indexing(1));
+                final boolean formerFramesOpt;
+                final boolean unSatOpt;
+                final boolean notBOpt;
+                final boolean propagateOpt;
+                final boolean filterOpt;
+                if(former.equals(Former.Enabled)){
+                    formerFramesOpt = true;
+                }else{
+                    formerFramesOpt = false;
+                }
+                if(unSat.equals(UnSat.Enabled)){
+                    unSatOpt = true;
+                }else{
+                    unSatOpt = false;
+                }
+                if(notB.equals(NotB.Enabled)){
+                    notBOpt = true;
+                }else{
+                    notBOpt = false;
+                }
+                if(propagate.equals(Propagate.Enabled)){
+                    propagateOpt = true;
+                }else{
+                    propagateOpt = false;
+                }
+                if(filter.equals(Filter.Enabled)){
+                    filterOpt = true;
+                }else{
+                    filterOpt = false;
+                }
                 if(direction.equals(Direction.Connected)){
                     checker = new ConnectedIc3Checker(monolithicExpr,Z3SolverFactory.getInstance(),formerFramesOpt,unSatOpt,notBOpt,propagateOpt,filterOpt);
                 }else if(direction.equals(Direction.Reverse)){

@@ -24,6 +24,7 @@ import hu.bme.mit.theta.solver.z3.Z3SolverFactory;
 import hu.bme.mit.theta.sts.STS;
 import hu.bme.mit.theta.sts.aiger.AigerParser;
 import hu.bme.mit.theta.sts.aiger.AigerToSts;
+import hu.bme.mit.theta.sts.analysis.ic3.ConnectedIc3Checker;
 import hu.bme.mit.theta.sts.analysis.ic3.Ic3Checker;
 import hu.bme.mit.theta.sts.analysis.ic3.ReverseIc3Checker;
 import hu.bme.mit.theta.sts.dsl.StsDslManager;
@@ -108,7 +109,7 @@ public class Ic3Test {
 
     @Test
     public void testConnected() throws IOException {
-        assertTimeoutPreemptively(Duration.ofMillis(10000000), () -> {
+        assertTimeoutPreemptively(Duration.ofMillis(1000), () -> {
             STS sts = null;
             if (filePath.endsWith("aag")) {
                 sts = AigerToSts.createSts(AigerParser.parse(filePath));
@@ -121,9 +122,9 @@ public class Ic3Test {
             }
             final MonolithicExpr monolithicExpr = new ConcreteMonolithicExpr(sts.getInit(), sts.getTrans(), sts.getProp(), VarIndexingFactory.indexing(1));
             //var reverseChecker = new ReverseIc3Checker(monolithicExpr, Z3SolverFactory.getInstance());
-            //var checker = new ConnectedIc3Checker(monolithicExpr, Z3SolverFactory.getInstance());
+            var checker = new ReverseIc3Checker(monolithicExpr, Z3SolverFactory.getInstance(),true,true,true,true,true);
             //var checker = new ReverseIc3Checker(monolithicExpr, Z3SolverFactory.getInstance());
-            var checker = new Ic3Checker(monolithicExpr, Z3SolverFactory.getInstance());
+            //var checker = new Ic3Checker(monolithicExpr, Z3SolverFactory.getInstance());
             Assert.assertEquals(isSafe, checker.check(null).isSafe());
         });
     }
