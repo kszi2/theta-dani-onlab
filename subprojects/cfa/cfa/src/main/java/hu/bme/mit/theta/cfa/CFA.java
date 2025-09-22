@@ -302,5 +302,54 @@ public final class CFA {
         private void checkNotBuilt() {
             checkState(!built, "A CFA was already built.");
         }
+
+        public static CFA restrictToLocations(
+                final CFA original,
+                final Collection<CFA.Loc> selectedLocs,
+                final CFA.Loc initLocInNewCfa) {
+
+            CFA.Builder builder = CFA.builder();
+
+            // Map old Loc -> new Loc
+            Map<CFA.Loc, CFA.Loc> locMap = new HashMap<>();
+
+            // Recreate the selected locations
+            for (CFA.Loc oldLoc : selectedLocs) {
+                CFA.Loc newLoc = builder.createLoc(oldLoc.getName());
+                locMap.put(oldLoc, newLoc);
+            }
+
+            // Recreate edges where both endpoints are kept
+            for (CFA.Edge oldEdge : original.getEdges()) {
+                if (locMap.containsKey(oldEdge.getSource()) && locMap.containsKey(oldEdge.getTarget())) {
+                    CFA.Edge newEdge =
+                            builder.createEdge(
+                                    locMap.get(oldEdge.getSource()),
+                                    locMap.get(oldEdge.getTarget()),
+                                    oldEdge.getStmt());
+                    if (original.getAcceptingEdges().contains(oldEdge)) {
+                        builder.addAcceptingEdge(newEdge);
+                    }
+                }
+            }
+
+            // Set the init location (must be included in subset)
+            if (!locMap.containsKey(initLocInNewCfa)) {
+                throw new IllegalArgumentException(
+                        "The chosen init location is not in the selected location set.");
+            }
+            builder.setInitLoc(locMap.get(initLocInNewCfa));
+
+            // Preserve final/error if they are in the subset
+            if (original.getFinalLoc().isPresent() && locMap.containsKey(original.getFinalLoc().get())) {
+                builder.setFinalLoc(locMap.get(original.getFinalLoc().get()));
+            }
+
+            if (original.getErrorLoc().isPresent() && locMap.containsKey(original.getErrorLoc().get())) {
+                builder.setErrorLoc(locMap.get(original.getErrorLoc().get()));
+            }
+
+            return builder.build();
+        }
     }
 }

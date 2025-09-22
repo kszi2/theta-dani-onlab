@@ -13,10 +13,7 @@
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
  */
-package hu.bme.mit.theta.analysis.algorithm.ic3;
-
-import static hu.bme.mit.theta.core.type.booltype.SmartBoolExprs.*;
-import static hu.bme.mit.theta.core.utils.ExprUtils.getConjuncts;
+package hu.bme.mit.theta.analysis.algorithm.car;
 
 import hu.bme.mit.theta.analysis.algorithm.bounded.MonolithicExpr;
 import hu.bme.mit.theta.core.model.MutableValuation;
@@ -27,16 +24,23 @@ import hu.bme.mit.theta.core.utils.PathUtils;
 import hu.bme.mit.theta.solver.SolverStatus;
 import hu.bme.mit.theta.solver.UCSolver;
 import hu.bme.mit.theta.solver.utils.WithPushPop;
-import java.util.*;
 
-public class Frame {
-    private final Frame parent;
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.Set;
+
+import static hu.bme.mit.theta.core.type.booltype.SmartBoolExprs.And;
+import static hu.bme.mit.theta.core.type.booltype.SmartBoolExprs.Not;
+import static hu.bme.mit.theta.core.utils.ExprUtils.getConjuncts;
+
+public class OverFrame {
+    private final OverFrame parent;
     private final Set<Expr<BoolType>> exprs;
 
     private final UCSolver solver;
     private final MonolithicExpr monolithicExpr;
 
-    public Frame(final Frame parent, UCSolver solver, MonolithicExpr monolithicExpr) {
+    public OverFrame(final OverFrame parent, UCSolver solver, MonolithicExpr monolithicExpr) {
         this.parent = parent;
         this.solver = solver;
         this.monolithicExpr = monolithicExpr;

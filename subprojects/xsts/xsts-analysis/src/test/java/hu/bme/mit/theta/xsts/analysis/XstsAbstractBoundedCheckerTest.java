@@ -16,11 +16,13 @@
 package hu.bme.mit.theta.xsts.analysis;
 
 import static hu.bme.mit.theta.analysis.algorithm.bounded.BoundedCheckerBuilderKt.buildBMC;
+import static hu.bme.mit.theta.analysis.algorithm.bounded.BoundedCheckerBuilderKt.buildIMC;
 import static org.junit.Assert.assertTrue;
 
 import hu.bme.mit.theta.analysis.algorithm.SafetyResult;
 import hu.bme.mit.theta.analysis.algorithm.bounded.MonolithicExpr;
 import hu.bme.mit.theta.analysis.algorithm.bounded.MonolithicExprCegarChecker;
+import hu.bme.mit.theta.analysis.algorithm.ic3.Ic3Checker;
 import hu.bme.mit.theta.common.logging.ConsoleLogger;
 import hu.bme.mit.theta.common.logging.Logger;
 import hu.bme.mit.theta.solver.z3legacy.Z3LegacySolverFactory;

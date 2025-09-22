@@ -1,0 +1,47 @@
+digraph CFA {
+    node [shape=circle];
+
+    L0 [label="L0"];
+    L1 [label="L1"];
+    L2 [label="L2"];
+    L3 [label="L3"];
+    L4 [label="L4"];
+    L5 [label="L5"];
+    L6 [label="L6"];
+    L7 [label="L7"];
+    L8 [label="L8"];
+    L9 [label="L9"];
+    L10 [label="L10"];
+    L11 [label="L11"];
+    L12 [label="L12"];
+    L13 [label="L13"];
+    LF [label="LF", shape=doublecircle];
+    LE [label="LE", shape=doublecircle, color=red];
+
+    L0 -> L1 [label="x := false\ny := false"];
+    L1 -> L2 [label="z := x and y"];
+    L2 -> LF [label="assume z"];
+    L2 -> L3 [label="assume not z"];
+
+    L3 -> L4 [label="z := x or y"];
+    L4 -> LF [label="assume z"];
+    L4 -> L5 [label="assume not z"];
+
+    L5 -> L6 [label="z := x xor y"];
+    L6 -> LF [label="assume z"];
+    L6 -> L7 [label="assume not z"];
+
+    L7 -> L8 [label="z := x iff y"];
+    L8 -> LF [label="assume not z"];
+    L8 -> L9 [label="assume z"];
+
+    L9 -> L10 [label="z := x imply y"];
+    L10 -> LF [label="assume not z"];
+    L10 -> L11 [label="assume z"];
+
+    L11 -> L12 [label="z := not x"];
+    L12 -> LF [label="assume not z"];
+    L12 -> L13 [label="assume z"];
+
+    L13 -> LE [label="assume true"];
+}
