@@ -102,7 +102,7 @@ public class CarTest {
             sts = Utils.singleElementOf(spec.getAllSts());
         }
         final MonolithicExpr monolithicExpr = StsToMonolithicExprKt.toMonolithicExpr(sts);
-        var checker =
+        CarChecker checker =
                 new CarChecker<>(
                         monolithicExpr,
                         true,
@@ -118,5 +118,6 @@ public class CarTest {
                         true,
                         logger);
         Assert.assertEquals(isSafe, checker.check().isSafe());
+        checker.prune(1,0);
     }
 }

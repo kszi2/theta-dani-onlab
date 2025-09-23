@@ -16,7 +16,6 @@
 
 package hu.bme.mit.theta.analysis.algorithm.car;
 
-import hu.bme.mit.theta.analysis.algorithm.bounded.MonolithicExpr;
 import hu.bme.mit.theta.core.model.MutableValuation;
 import hu.bme.mit.theta.core.model.Valuation;
 import hu.bme.mit.theta.core.type.Expr;
@@ -29,7 +28,6 @@ import hu.bme.mit.theta.solver.utils.WithPushPop;
 import java.util.*;
 
 import static hu.bme.mit.theta.core.type.booltype.SmartBoolExprs.And;
-import static hu.bme.mit.theta.core.type.booltype.SmartBoolExprs.Not;
 import static hu.bme.mit.theta.core.utils.ExprUtils.getConjuncts;
 
 public class UnderFrame {
@@ -44,6 +42,8 @@ public class UnderFrame {
     public List<Integer> getParents() {
         return parents;
     }
+
+
 
     private final List<Integer> parents;
     private final UCSolver solver;

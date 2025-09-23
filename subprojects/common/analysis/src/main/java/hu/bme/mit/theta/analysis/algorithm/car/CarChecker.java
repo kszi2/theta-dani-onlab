@@ -171,6 +171,35 @@ public class CarChecker<S extends ExprState, A extends ExprAction>
         }
     }
 
+    public void prune(int backwardIndex, int index){
+        if(backwardUnderFrames.size()-1>=backwardIndex+1){
+            int childSize = backwardUnderFrames.get(backwardIndex+1).getParents().size();
+            for(int i = 0; i < childSize; i++){
+                if(backwardUnderFrames.get(backwardIndex+1).getParents().get(i)==index){
+                    prune(backwardIndex+1,i);
+                }
+            }
+        }
+        var exp = backwardUnderFrames.get(backwardIndex).getExprsinList().get(index);
+        backwardUnderFrames.get(backwardIndex).getExprs().remove(exp);
+        backwardUnderFrames.get(backwardIndex).getParents().remove(index);
+        backwardUnderFrames.get(backwardIndex).getExprsinList().remove(index);
+
+
+        if(backwardUnderFrames.size()-1>=backwardIndex+1){
+            for(int i = 0; i < backwardUnderFrames.get(backwardIndex+1).getParents().size(); i++){
+                var oldValue = backwardUnderFrames.get(backwardIndex+1).getParents().get(i);
+                if(oldValue>index){
+                    backwardUnderFrames.get(backwardIndex+1).getParents().set(i,oldValue-1);
+                }
+            }
+
+        }
+        if(backwardUnderFrames.get(backwardIndex).getParents().size()==0){
+            backwardUnderFrames.remove(backwardIndex);
+        }
+    }
+
     LinkedList<ProofObligation> tryBlock(ProofObligation mainProofObligation) {
         final LinkedList<ProofObligation> proofObligationsQueue = new LinkedList<ProofObligation>();
         proofObligationsQueue.add(mainProofObligation);

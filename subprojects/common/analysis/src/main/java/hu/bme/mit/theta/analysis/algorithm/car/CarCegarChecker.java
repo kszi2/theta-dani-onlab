@@ -142,7 +142,7 @@ public class CarCegarChecker<S extends ExprState, A extends ExprAction>
             final var abstractMonolithicExpr =
                     AbstractMonolithicExprKt.createAbstract(monolithicExpr, predPrec);
             var checker =
-                    new Ic3Checker<>(
+                    new CarChecker<>(
                             abstractMonolithicExpr,
                             true,
                             Z3LegacySolverFactory.getInstance(),
