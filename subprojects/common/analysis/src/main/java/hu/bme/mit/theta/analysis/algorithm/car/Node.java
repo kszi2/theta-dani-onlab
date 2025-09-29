@@ -13,34 +13,38 @@
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
  */
+
 package hu.bme.mit.theta.analysis.algorithm.car;
 
 import hu.bme.mit.theta.core.type.Expr;
 import hu.bme.mit.theta.core.type.booltype.BoolType;
 
+import java.util.HashSet;
 import java.util.Set;
 
-public class ProofObligation {
-
-
-    private int time;
-
-
-
-
-    private Node node;
-
-    ProofObligation(Node node, int time) {
-        this.node = node;
-        this.time = time;
+public class Node {
+    public Set<Expr<BoolType>> getExprs() {
+        return exprs;
+    }
+    public Node getParent() {
+        return parent;
     }
 
-    public Node getNode() {
-        return node;
-    }
-    public int getTime() {
-        return time;
+    public void setExprs(Set<Expr<BoolType>> exprs) {
+        this.exprs = exprs;
     }
 
+    private Set<Expr<BoolType>> exprs;
+
+
+
+    private Node parent;
+
+
+    public Node(Expr<BoolType> expr, Node parent) {
+        exprs = new HashSet<Expr<BoolType>>();
+        exprs.add(expr);
+        this.parent = parent;
+    }
 
 }

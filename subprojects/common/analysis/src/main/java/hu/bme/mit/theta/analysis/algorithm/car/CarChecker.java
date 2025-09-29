@@ -40,7 +40,6 @@ import hu.bme.mit.theta.core.utils.PathUtils;
 import hu.bme.mit.theta.solver.SolverFactory;
 import hu.bme.mit.theta.solver.UCSolver;
 import hu.bme.mit.theta.solver.utils.WithPushPop;
-import scala.Console;
 
 import java.util.*;
 import java.util.function.BiFunction;
@@ -70,6 +69,10 @@ public class CarChecker<S extends ExprState, A extends ExprAction>
     private final boolean forwardTrace;
     private final boolean propertyOpt;
     private final Logger logger;
+
+    private final HashMap<Node, Boolean> currentlyVisited;
+
+    private Node root;
 
     public List<MutableValuation> getValuations() {
         return valuations;
@@ -133,6 +136,19 @@ public class CarChecker<S extends ExprState, A extends ExprAction>
         backwardUnderFrames.get(0).expand(Not(monolithicExpr.getPropExpr()),0);
         currentFrameNumber = 0;
         valuations = new ArrayList<>();
+        root = new Node(Not(monolithicExpr.getPropExpr()),null);
+        currentlyVisited = new HashMap<>();
+        currentlyVisited.put(root,false);
+    }
+
+    private Node getNotCheckedNode(){
+        for(Node node : currentlyVisited.keySet()){ //todo can be more faster if the nodes visited in a more specific order
+            if(!currentlyVisited.get(node)){
+                currentlyVisited.put(node,true);
+                return node;
+            }
+        }
+        return null;
     }
 
     @Override
@@ -145,36 +161,30 @@ public class CarChecker<S extends ExprState, A extends ExprAction>
             return result;
         }
         while (true) {
-            boolean found = false; //is this neccessary?
-            var backwardUnderFramesCopy = new ArrayList<UnderFrame>();
-            backwardUnderFramesCopy.addAll(backwardUnderFrames); //todo not elegant
-            int backwardTime = 0;
-            for(UnderFrame currentUnder : backwardUnderFramesCopy){
-                final Collection<Expr<BoolType>> counterExample =
-                        checkCurrentFrame(currentUnder.getExprsinList(), backwardTime);
-                if (counterExample != null) {
-                    found = true;
-                    var proofObligationsList =
-                            tryBlock(
-                                    new ProofObligation(
-                                            new HashSet<>(counterExample), currentFrameNumber, backwardTime+1, currentIndexOfUnder));
-                    if (proofObligationsList != null) {
-                        var trace = makeTrace(proofObligationsList);
+            while(true){
+                Node node = getNotCheckedNode();
+                if(node == null){
+                    break;
+                }
+                Node counterExampleNode = checkCurrentFrame(node);
+                if (counterExampleNode != null) {
+                    var faultyNode =
+                            tryBlock(new ProofObligation(counterExampleNode, currentFrameNumber));
+                    if (faultyNode != null) {
+                        var trace = makeTrace(faultyNode);
                         final var result = SafetyResult.unsafe(trace, EmptyProof.getInstance());
                         logger.writeln(Logger.Level.RESULT, result.toString());
                         return result;
                     }
                 }
-                backwardTime++;
             }
-             if(!found){
-                if (propagate()) {
-                    final SafetyResult<EmptyProof, Trace<S, A>> result =
-                            SafetyResult.safe(EmptyProof.getInstance());
-                    logger.writeln(Logger.Level.RESULT, result.toString());
-                    return result;
-                }
+            if (propagate()) {
+                final SafetyResult<EmptyProof, Trace<S, A>> result =
+                        SafetyResult.safe(EmptyProof.getInstance());
+                logger.writeln(Logger.Level.RESULT, result.toString());
+                return result;
             }
+
         }
     }
 
@@ -207,14 +217,14 @@ public class CarChecker<S extends ExprState, A extends ExprAction>
         }
     }
 
-    LinkedList<ProofObligation> tryBlock(ProofObligation mainProofObligation) {
+    Node tryBlock(ProofObligation mainProofObligation) {
         final LinkedList<ProofObligation> proofObligationsQueue = new LinkedList<ProofObligation>();
         proofObligationsQueue.add(mainProofObligation);
         while (!proofObligationsQueue.isEmpty()) {
             final ProofObligation proofObligation = proofObligationsQueue.getLast();
 
             if (proofObligation.getTime() == 0) {
-                return proofObligationsQueue;
+                return proofObligation.getNode();
             }
 
             final Collection<Expr<BoolType>> b;
@@ -225,7 +235,7 @@ public class CarChecker<S extends ExprState, A extends ExprAction>
                         .getExprs()
                         .forEach(ex -> solver.track(PathUtils.unfold(ex, 0)));
                 if (notBOpt) {
-                    solver.track(PathUtils.unfold(Not(And(proofObligation.getExpressions())), 0));
+                    solver.track(PathUtils.unfold(Not(And(proofObligation.getNode().getExprs())), 0));
                 }
                 if (proofObligation.getTime() > 2 && formerFramesOpt) { // lehet, hogy 1, vagy 2??
                     solver.track(
@@ -239,7 +249,8 @@ public class CarChecker<S extends ExprState, A extends ExprAction>
                 getConjuncts(monolithicExpr.getTransExpr())
                         .forEach(ex -> solver.track(PathUtils.unfold(ex, 0)));
                 proofObligation
-                        .getExpressions()
+                        .getNode()
+                        .getExprs()
                         .forEach(
                                 ex ->
                                         solver.track(
@@ -288,9 +299,9 @@ public class CarChecker<S extends ExprState, A extends ExprAction>
             if (b == null) {
 
                 final Collection<Expr<BoolType>> newCore = new ArrayList<Expr<BoolType>>();
-                newCore.addAll(proofObligation.getExpressions());
+                newCore.addAll(proofObligation.getNode().getExprs());
                 if (unSatOpt) {
-                    for (Expr<BoolType> i : proofObligation.getExpressions()) {
+                    for (Expr<BoolType> i : proofObligation.getNode().getExprs()) {
                         if (!unSatCore.contains(
                                 PathUtils.unfold(i, monolithicExpr.getTransOffsetIndex()))) {
                             newCore.remove(i);
@@ -313,12 +324,9 @@ public class CarChecker<S extends ExprState, A extends ExprAction>
                 }
                 proofObligationsQueue.removeLast();
             } else {
-                if(backwardUnderFrames.size()<=proofObligation.getBackwardTime()+1){
-                    backwardUnderFrames.add(new UnderFrame(solver));
-                }
-                int indexofProof = backwardUnderFrames.get(proofObligation.getBackwardTime()+1).expand(And(b), proofObligation.getIndex());
-                proofObligationsQueue.add(
-                        new ProofObligation(new HashSet<>(b), proofObligation.getTime() - 1, proofObligation.getBackwardTime()+1, indexofProof));
+                Node newNode = new Node(And(b),proofObligation.getNode());
+                currentlyVisited.put(newNode,true);
+                proofObligationsQueue.add(new ProofObligation(newNode, proofObligation.getTime() - 1));
             }
         }
         return null;
@@ -390,10 +398,9 @@ public class CarChecker<S extends ExprState, A extends ExprAction>
     }
 
     private int currentIndexOfUnder;
-    public Collection<Expr<BoolType>> checkCurrentFrame(List<Expr<BoolType>> target, int backwardTime) {
+    public Node checkCurrentFrame(Node target) {
         if (propertyOpt) {
-            int underPointer = 0;
-            for(var underEx : target){
+            for(var underEx : target.getExprs()){
                 try (var wpp = new WithPushPop(solver)) {
                     forwardOverFrames.get(currentFrameNumber)
                             .getExprs()
@@ -409,29 +416,40 @@ public class CarChecker<S extends ExprState, A extends ExprAction>
                                 .filter(model.toMap()::containsKey)
                                 .forEach(decl -> filteredModel.put(decl, model.eval(decl).get()));
 
-                        if(backwardUnderFrames.size()<=backwardTime+1){
-                            backwardUnderFrames.add(new UnderFrame(solver));
-                        }
+                        var counterExample = getConjuncts(PathUtils.foldin(filteredModel.toExpr(), 0));
 
-                        currentIndexOfUnder = backwardUnderFrames.get(backwardTime+1).expand(And(getConjuncts(PathUtils.foldin(filteredModel.toExpr(), 0))), underPointer);
+                        Node newNode = new Node(And(counterExample),target);
 
-                        return getConjuncts(PathUtils.foldin(filteredModel.toExpr(), 0));
+                        currentlyVisited.put(newNode,true);
+
+                        return newNode;
 
                     }
                 }
-
-
-                underPointer++;
             }
             return null;
 
 
         } else {
-            return forwardOverFrames.get(currentFrameNumber).check(Or(target));
+            var counterExample = forwardOverFrames.get(currentFrameNumber).check(And(target.getExprs()));
+            if(counterExample == null){
+                return null; //no intersection found
+            }else{
+                Node newNode = new Node(And(counterExample),target);
+
+                currentlyVisited.put(newNode,true);
+                return newNode;
+            }
+        }
+    }
+    private void noNodeIsVisited(){
+        for(Node node : currentlyVisited.keySet()){
+            currentlyVisited.put(node,false);
         }
     }
 
     public boolean propagate() {
+        noNodeIsVisited();
         forwardOverFrames.add(new OverFrame(forwardOverFrames.get(currentFrameNumber), solver, monolithicExpr));
         currentFrameNumber++;
         if (propertyOpt) {
@@ -464,30 +482,23 @@ public class CarChecker<S extends ExprState, A extends ExprAction>
         return false;
     }
 
-    public Trace<S, A> makeTrace(LinkedList<ProofObligation> forwardProofObligations) {
+    public Trace<S, A> makeTrace(Node faultyNode) {
         var abstractStates = new ArrayList<ExprState>();
         var abstractActions = new ArrayList<ExprAction>();
-        int backwardtime = backwardUnderFrames.size()-1;
-        var currentExp = backwardUnderFrames.get(backwardtime).getExprsinList()
-                .get(backwardUnderFrames.get(backwardtime).getExprsinList().size()-1);
-        var currentIndx = backwardUnderFrames.get(backwardtime).getParents()
-                .get(backwardUnderFrames.get(backwardtime).getExprsinList().size()-1);
+        Node currentNode = faultyNode;
 
-        while (backwardtime>=0) {
+
+
+        while (currentNode != null) {
 
 
             if (!abstractStates.isEmpty())
                 abstractActions.add(MonolithicExprKt.action(monolithicExpr));
-            abstractStates.add(PredState.of(currentExp));
-            backwardtime--;
-            if(backwardtime>=0){
-
-                currentExp = backwardUnderFrames.get(backwardtime).getExprsinList().get(currentIndx);
-                currentIndx = backwardUnderFrames.get(backwardtime).getParents().get(currentIndx);
-
-            }
+            abstractStates.add(PredState.of(currentNode.getExprs()));
+            currentNode = currentNode.getParent();
 
         }
+
         final ExprTraceChecker<ItpRefutation> checker =
                 ExprTraceFwBinItpChecker.create(
                         monolithicExpr.getInitExpr(),

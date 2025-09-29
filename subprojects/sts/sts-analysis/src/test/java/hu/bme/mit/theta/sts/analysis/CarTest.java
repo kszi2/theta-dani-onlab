@@ -118,6 +118,6 @@ public class CarTest {
                         true,
                         logger);
         Assert.assertEquals(isSafe, checker.check().isSafe());
-        checker.prune(1,0);
+
     }
 }

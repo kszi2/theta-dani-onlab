@@ -63,7 +63,7 @@ import static hu.bme.mit.theta.core.utils.ExprUtils.getConjuncts;
 
 public class CarCegarChecker<S extends ExprState, A extends ExprAction>
         implements SafetyChecker<EmptyProof, Trace<S, A>, UnitPrec> {
-    private final MonolithicExpr monolithicExpr;
+    private MonolithicExpr monolithicExpr;
     private final List<OverFrame> forwardOverFrames;
     private final List<UnderFrame> backwardUnderFrames;
     private final SolverFactory solverFactory;
@@ -141,24 +141,26 @@ public class CarCegarChecker<S extends ExprState, A extends ExprAction>
     public SafetyResult<EmptyProof, Trace<S, A>> check(UnitPrec prec) {
         var predPrec = PredPrec.of(monolithicExpr.getInitExpr()); // todo use unitprec
 
+
+        var checker =
+                new CarChecker<>(
+                        monolithicExpr,
+                        true,
+                        Z3LegacySolverFactory.getInstance(),
+                        valToState,
+                        biValToAction,
+                        formerFramesOpt,
+                        unSatOpt,
+                        notBOpt,
+                        propagateOpt,
+                        filterOpt,
+                        propertyOpt,
+                        logger);
         while(true){
             logger.write(Logger.Level.SUBSTEP, "Current prec: %s\n", predPrec);
             final var abstractMonolithicExpr =
                     AbstractMonolithicExprKt.createAbstract(monolithicExpr, predPrec);
-            var checker =
-                    new CarChecker<>(
-                            abstractMonolithicExpr,
-                            true,
-                            Z3LegacySolverFactory.getInstance(),
-                            valToState,
-                            biValToAction,
-                            formerFramesOpt,
-                            unSatOpt,
-                            notBOpt,
-                            propagateOpt,
-                            filterOpt,
-                            propertyOpt,
-                            logger);
+            //checker.setMonolithicExpr(abstractMonolithicExpr);
             var result = checker.check();
             if (result.isSafe()) {
                 logger.write(Logger.Level.MAINSTEP, "Model is safe, stopping CEGAR");
@@ -202,6 +204,7 @@ public class CarCegarChecker<S extends ExprState, A extends ExprAction>
                         final var newPred = ref.get(ref.getPruneIndex());
                         final var newPrec = PredPrec.of(newPred);
                         predPrec = predPrec.join(newPrec);
+                        //checker.prune(ref.getPruneIndex());
                         logger.write(Logger.Level.INFO, "Added new predicate " + newPrec + "\n");
                     }
                 }
