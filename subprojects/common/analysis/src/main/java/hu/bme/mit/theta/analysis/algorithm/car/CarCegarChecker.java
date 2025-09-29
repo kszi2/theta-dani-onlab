@@ -36,9 +36,12 @@ import hu.bme.mit.theta.analysis.pred.PredPrec;
 import hu.bme.mit.theta.analysis.pred.PredState;
 import hu.bme.mit.theta.analysis.unit.UnitPrec;
 import hu.bme.mit.theta.common.logging.Logger;
+import hu.bme.mit.theta.core.decl.Decl;
+import hu.bme.mit.theta.core.decl.VarDecl;
 import hu.bme.mit.theta.core.model.MutableValuation;
 import hu.bme.mit.theta.core.model.Valuation;
 import hu.bme.mit.theta.core.type.Expr;
+import hu.bme.mit.theta.core.type.LitExpr;
 import hu.bme.mit.theta.core.type.booltype.BoolLitExpr;
 import hu.bme.mit.theta.core.type.booltype.BoolType;
 import hu.bme.mit.theta.core.utils.PathUtils;
@@ -50,6 +53,7 @@ import hu.bme.mit.theta.solver.z3legacy.Z3LegacySolverFactory;
 import java.util.*;
 import java.util.function.BiFunction;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static hu.bme.mit.theta.core.type.booltype.BoolExprs.Not;
@@ -161,8 +165,24 @@ public class CarCegarChecker<S extends ExprState, A extends ExprAction>
                 return SafetyResult.safe(result.getProof());
             }else{
                 Preconditions.checkState(result.isUnsafe());
-                final Trace<? extends ExprState, ? extends ExprAction> trace =
+                final Trace<? extends ExprState, ? extends ExprAction> cex =
                         result.asUnsafe().getCex();
+                Trace trace;
+                if(checker.getValuations().size()>0){
+                    List<PredState> states = new ArrayList<>();
+                    for (var v : checker.getValuations()) {
+                        states.add(activationLiteralsToPredicates(v));
+                    }
+
+                    var actions = cex.getActions();
+
+
+                    trace = Trace.of(states, actions);
+                }else{
+                    trace = cex;
+                }
+
+
 
                 final ExprTraceChecker<ItpRefutation> exprTraceFwBinItpChecker =
                         ExprTraceFwBinItpChecker.create(
@@ -189,6 +209,25 @@ public class CarCegarChecker<S extends ExprState, A extends ExprAction>
         }
 
     }
+    private PredState activationLiteralsToPredicates(Valuation valuation) {
+        Map<Decl<?>, LitExpr<?>> map = new HashMap<>(valuation.toMap());
+
+
+
+        // Transform each entry into predicates
+        List<Expr<BoolType>> predicates = new ArrayList<>();
+        for (var entry : map.entrySet()) {
+            BoolLitExpr boolExpr = (BoolLitExpr) entry.getValue();
+            if (boolExpr.getValue()) {
+                predicates.add(AbstractMonolithicExprKt.literalToPred.get(entry.getKey()));
+            } else {
+                predicates.add(Not((AbstractMonolithicExprKt.literalToPred.get(entry.getKey()))));
+            }
+        }
+
+        return PredState.of(predicates);
+    }
+
 
 
 }

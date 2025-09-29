@@ -33,12 +33,16 @@ import hu.bme.mit.theta.core.utils.ExprUtils
 import hu.bme.mit.theta.core.utils.indexings.VarIndexingFactory
 import java.util.HashMap
 
+@JvmField
+public val literalToPred = HashMap<Decl<*>, Expr<BoolType>>()
+
 fun MonolithicExpr.createAbstract(prec: PredPrec): MonolithicExpr {
   // TODO: handle initOffsetIndex in abstract initExpr
   val lambdaList = ArrayList<IffExpr>()
   val lambdaPrimeList = ArrayList<IffExpr>()
   val activationLiterals = ArrayList<VarDecl<*>>()
-  val literalToPred = HashMap<Decl<*>, Expr<BoolType>>()
+    literalToPred.clear()
+  //val literalToPred = HashMap<Decl<*>, Expr<BoolType>>()
 
   prec.preds.forEachIndexed { index, expr ->
     run {

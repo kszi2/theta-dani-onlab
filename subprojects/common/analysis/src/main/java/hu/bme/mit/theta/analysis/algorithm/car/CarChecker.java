@@ -71,6 +71,12 @@ public class CarChecker<S extends ExprState, A extends ExprAction>
     private final boolean propertyOpt;
     private final Logger logger;
 
+    public List<MutableValuation> getValuations() {
+        return valuations;
+    }
+
+    private List<MutableValuation> valuations;
+
     public CarChecker(
             MonolithicExpr monolithicExpr,
             boolean forwardTrace,
@@ -126,6 +132,7 @@ public class CarChecker<S extends ExprState, A extends ExprAction>
         backwardUnderFrames.add(new UnderFrame(solver));
         backwardUnderFrames.get(0).expand(Not(monolithicExpr.getPropExpr()),0);
         currentFrameNumber = 0;
+        valuations = new ArrayList<>();
     }
 
     @Override
@@ -481,23 +488,6 @@ public class CarChecker<S extends ExprState, A extends ExprAction>
             }
 
         }
-        /*
-        if (propertyOpt) {
-            abstractActions.add(MonolithicExprKt.action(monolithicExpr));
-            abstractStates.add(PredState.of(Not(monolithicExpr.getPropExpr())));
-        }
-        while (!forwardProofObligations.isEmpty()) {
-            final ProofObligation currentProofObligation = forwardProofObligations.getLast();
-            forwardProofObligations.removeLast();
-
-            if (!abstractStates.isEmpty())
-                abstractActions.add(MonolithicExprKt.action(monolithicExpr));
-            abstractStates.add(PredState.of(currentProofObligation.getExpressions()));
-        }
-        if (propertyOpt) {
-            abstractActions.add(MonolithicExprKt.action(monolithicExpr));
-            abstractStates.add(PredState.of(Not(monolithicExpr.getPropExpr())));
-        }*/
         final ExprTraceChecker<ItpRefutation> checker =
                 ExprTraceFwBinItpChecker.create(
                         monolithicExpr.getInitExpr(),
@@ -509,7 +499,7 @@ public class CarChecker<S extends ExprState, A extends ExprAction>
 
         Trace<Valuation, ? extends Action> trace = status.asFeasible().getValuations();
         if (!forwardTrace) trace = trace.reverse();
-        final List<MutableValuation> valuations =
+        valuations =
                 trace.getStates().stream()
                         .map(
                                 it -> {
@@ -536,6 +526,9 @@ public class CarChecker<S extends ExprState, A extends ExprAction>
                 actions.add(biValToAction.apply(valuations.get(i - 1), valuations.get(i)));
             }
         }
+
+
         return Trace.of(states, actions);
     }
+
 }
