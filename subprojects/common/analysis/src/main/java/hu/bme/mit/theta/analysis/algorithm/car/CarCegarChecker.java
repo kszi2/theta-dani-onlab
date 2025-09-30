@@ -140,27 +140,25 @@ public class CarCegarChecker<S extends ExprState, A extends ExprAction>
     @Override
     public SafetyResult<EmptyProof, Trace<S, A>> check(UnitPrec prec) {
         var predPrec = PredPrec.of(monolithicExpr.getInitExpr()); // todo use unitprec
-
-
-        var checker =
-                new CarChecker<>(
-                        monolithicExpr,
-                        true,
-                        Z3LegacySolverFactory.getInstance(),
-                        valToState,
-                        biValToAction,
-                        formerFramesOpt,
-                        unSatOpt,
-                        notBOpt,
-                        propagateOpt,
-                        filterOpt,
-                        propertyOpt,
-                        logger);
+        //predPrec = predPrec.join(PredPrec.of(monolithicExpr.getPropExpr()));
         while(true){
             logger.write(Logger.Level.SUBSTEP, "Current prec: %s\n", predPrec);
             final var abstractMonolithicExpr =
                     AbstractMonolithicExprKt.createAbstract(monolithicExpr, predPrec);
-            //checker.setMonolithicExpr(abstractMonolithicExpr);
+            var checker =
+                    new Ic3Checker<>(
+                            abstractMonolithicExpr,
+                            true,
+                            Z3LegacySolverFactory.getInstance(),
+                            valToState,
+                            biValToAction,
+                            formerFramesOpt,
+                            unSatOpt,
+                            notBOpt,
+                            propagateOpt,
+                            filterOpt,
+                            propertyOpt,
+                            logger);
             var result = checker.check();
             if (result.isSafe()) {
                 logger.write(Logger.Level.MAINSTEP, "Model is safe, stopping CEGAR");
@@ -204,7 +202,6 @@ public class CarCegarChecker<S extends ExprState, A extends ExprAction>
                         final var newPred = ref.get(ref.getPruneIndex());
                         final var newPrec = PredPrec.of(newPred);
                         predPrec = predPrec.join(newPrec);
-                        //checker.prune(ref.getPruneIndex());
                         logger.write(Logger.Level.INFO, "Added new predicate " + newPrec + "\n");
                     }
                 }

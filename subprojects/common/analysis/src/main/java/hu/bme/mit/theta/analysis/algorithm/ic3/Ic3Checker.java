@@ -52,6 +52,12 @@ import java.util.function.Function;
 public class Ic3Checker<S extends ExprState, A extends ExprAction>
         implements SafetyChecker<EmptyProof, Trace<S, A>, UnitPrec> {
     private final MonolithicExpr monolithicExpr;
+
+    public List<MutableValuation> getValuations() {
+        return valuations;
+    }
+
+    private List<MutableValuation> valuations;
     private final List<Frame> frames;
     private final SolverFactory solverFactory;
     private final UCSolver solver;
@@ -118,6 +124,7 @@ public class Ic3Checker<S extends ExprState, A extends ExprAction>
         solver = solverFactory.createUCSolver();
         frames.add(new Frame(null, solver, monolithicExpr));
         frames.get(0).refine(monolithicExpr.getInitExpr());
+        valuations = new ArrayList<>();
         currentFrameNumber = 0;
     }
 
@@ -418,7 +425,7 @@ public class Ic3Checker<S extends ExprState, A extends ExprAction>
 
         Trace<Valuation, ? extends Action> trace = status.asFeasible().getValuations();
         if (!forwardTrace) trace = trace.reverse();
-        final List<MutableValuation> valuations =
+        valuations =
                 trace.getStates().stream()
                         .map(
                                 it -> {
