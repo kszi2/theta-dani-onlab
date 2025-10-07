@@ -27,6 +27,8 @@ import hu.bme.mit.theta.analysis.algorithm.SafetyResult;
 import hu.bme.mit.theta.analysis.algorithm.Statistics;
 import hu.bme.mit.theta.analysis.algorithm.arg.ARG;
 import hu.bme.mit.theta.analysis.algorithm.bounded.*;
+import hu.bme.mit.theta.analysis.algorithm.car.CarCegarChecker;
+import hu.bme.mit.theta.analysis.algorithm.car.CarChecker;
 import hu.bme.mit.theta.analysis.algorithm.cegar.CegarStatistics;
 import hu.bme.mit.theta.analysis.algorithm.ic3.Ic3Checker;
 import hu.bme.mit.theta.analysis.algorithm.mdd.MddChecker;
@@ -86,7 +88,11 @@ public class StsCli {
         KINDUCTION,
         IMC,
         MDD,
-        IC3
+        IC3,
+
+        Car,
+
+        CarCegar
     }
 
     @Parameter(
@@ -180,6 +186,34 @@ public class StsCli {
     @Parameter(names = "--version", description = "Display version", help = true)
     boolean versionInfo = false;
 
+
+
+
+
+    @Parameter(names = "--version", description = "Display version", help = true)
+    boolean formerFrames = true;
+
+    @Parameter(names = "--version", description = "Display version", help = true)
+    boolean unSat = true;
+
+    @Parameter(names = "--version", description = "Display version", help = true)
+    boolean notB = true;
+
+    @Parameter(names = "--version", description = "Display version", help = true)
+    boolean propagate = true;
+
+    @Parameter(names = "--version", description = "Display version", help = true)
+    boolean filter = true;
+
+    @Parameter(names = "--version", description = "Display version", help = true)
+    boolean property = true;
+
+    @Parameter(names = "--version", description = "Display version", help = true)
+    boolean cover = true;
+
+
+
+
     private Logger logger;
 
     public StsCli(final String[] args) {
@@ -244,7 +278,44 @@ public class StsCli {
                                 solverFactory,
                                 abstractME -> buildIc3Checker(monolithicExpr, solverFactory));
                 status = checker.check(null);
-            } else {
+            } else if (algorithm == Algorithm.Car) {
+                final var checker =
+                        new CarChecker<>(
+                                monolithicExpr,
+                                true,
+                                Z3LegacySolverFactory.getInstance(),
+                                valuation -> StsToMonolithicExprKt.valToState(sts, valuation),
+                                (Valuation v1, Valuation v2) ->
+                                        StsToMonolithicExprKt.valToAction(sts, v1, v2),
+                                formerFrames,
+                                unSat,
+                                notB,
+                                propagate,
+                                filter,
+                                property,
+                                cover,
+                                logger);
+                status = checker.check(null);
+            } else if (algorithm == Algorithm.CarCegar) {
+                final var checker =
+                        new CarCegarChecker<>(
+                                monolithicExpr,
+                                true,
+                                Z3LegacySolverFactory.getInstance(),
+                                valuation -> StsToMonolithicExprKt.valToState(sts, valuation),
+                                (Valuation v1, Valuation v2) ->
+                                        StsToMonolithicExprKt.valToAction(sts, v1, v2),
+                                formerFrames,
+                                unSat,
+                                notB,
+                                propagate,
+                                filter,
+                                property,
+                                cover,
+                                logger);
+                status = checker.check(null);
+            }
+            else {
                 throw new UnsupportedOperationException(
                         "Algorithm " + algorithm + " not supported");
             }
@@ -428,12 +499,12 @@ public class StsCli {
                 solverFactory,
                 valuation -> monolithicExpr.getValToState().invoke(valuation),
                 (Valuation v1, Valuation v2) -> monolithicExpr.getBiValToAction().invoke(v1, v2),
-                true,
-                true,
-                true,
-                true,
-                true,
-                true,
+                formerFrames,
+                unSat,
+                notB,
+                propagate,
+                filter,
+                property,
                 logger);
     }
 

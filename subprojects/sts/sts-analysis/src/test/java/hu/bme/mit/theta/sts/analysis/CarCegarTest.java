@@ -74,8 +74,7 @@ public class CarCegarTest {
                     {"src/test/resources/counter.system", true},
                     {"src/test/resources/counter_bad.system", false},
                     {"src/test/resources/counter_parametric.system", true},
-
-                    //                {"src/test/resources/loop.system", true},
+                        {"src/test/resources/loop.system", true},
 
                     {"src/test/resources/loop_bad.system", false},
                     {"src/test/resources/multipleinitial.system", false},
@@ -110,11 +109,12 @@ public class CarCegarTest {
                         valuation -> StsToMonolithicExprKt.valToState(sts, valuation),
                         (Valuation v1, Valuation v2) ->
                                 StsToMonolithicExprKt.valToAction(sts, v1, v2),
-                        false,
-                        false,
-                        false,
-                        false,
-                        false,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
                         true,
                         logger);
         Assert.assertEquals(isSafe, checker.check().isSafe());

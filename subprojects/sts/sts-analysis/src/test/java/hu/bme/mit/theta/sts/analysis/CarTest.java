@@ -111,10 +111,11 @@ public class CarTest {
                         (Valuation v1, Valuation v2) ->
                                 StsToMonolithicExprKt.valToAction(sts, v1, v2),
                         false,
-                        false,
-                        false,
-                        false,
-                        false,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
                         true,
                         logger);
         Assert.assertEquals(isSafe, checker.check().isSafe());

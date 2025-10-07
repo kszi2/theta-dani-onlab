@@ -75,6 +75,8 @@ public class CarCegarChecker<S extends ExprState, A extends ExprAction>
     private final boolean notBOpt;
     private final boolean propagateOpt;
     private final boolean filterOpt;
+
+    private final boolean coverOpt;
     private int currentFrameNumber;
     private final boolean forwardTrace;
     private final boolean propertyOpt;
@@ -99,6 +101,7 @@ public class CarCegarChecker<S extends ExprState, A extends ExprAction>
                 true,
                 true,
                 true,
+                true,
                 logger);
     }
 
@@ -114,6 +117,7 @@ public class CarCegarChecker<S extends ExprState, A extends ExprAction>
             boolean propagateOpt,
             boolean filterOpt,
             boolean propertyOpt,
+            boolean coverOpt,
             Logger logger) {
         this.monolithicExpr = monolithicExpr;
         this.valToState = valToState;
@@ -125,6 +129,7 @@ public class CarCegarChecker<S extends ExprState, A extends ExprAction>
         this.filterOpt = filterOpt;
         this.forwardTrace = forwardTrace;
         this.propertyOpt = propertyOpt;
+        this.coverOpt = coverOpt;
         this.logger = logger;
         this.solverFactory = solverFactory;
         forwardOverFrames = new ArrayList<>();
@@ -140,33 +145,38 @@ public class CarCegarChecker<S extends ExprState, A extends ExprAction>
     @Override
     public SafetyResult<EmptyProof, Trace<S, A>> check(UnitPrec prec) {
         var predPrec = PredPrec.of(monolithicExpr.getInitExpr()); // todo use unitprec
-        //predPrec = predPrec.join(PredPrec.of(monolithicExpr.getPropExpr()));
+        predPrec = predPrec.join(PredPrec.of(monolithicExpr.getPropExpr()));
+        final var abstractMonolithicExprInit =
+                AbstractMonolithicExprKt.createAbstract(monolithicExpr, predPrec);
+        var checker =
+                new CarChecker<>(
+                        abstractMonolithicExprInit,
+                        true,
+                        Z3LegacySolverFactory.getInstance(),
+                        valToState,
+                        biValToAction,
+                        formerFramesOpt,
+                        unSatOpt,
+                        notBOpt,
+                        propagateOpt,
+                        filterOpt,
+                        propertyOpt,
+                        coverOpt,
+                        logger);
         while(true){
             logger.write(Logger.Level.SUBSTEP, "Current prec: %s\n", predPrec);
             final var abstractMonolithicExpr =
                     AbstractMonolithicExprKt.createAbstract(monolithicExpr, predPrec);
-            var checker =
-                    new Ic3Checker<>(
-                            abstractMonolithicExpr,
-                            true,
-                            Z3LegacySolverFactory.getInstance(),
-                            valToState,
-                            biValToAction,
-                            formerFramesOpt,
-                            unSatOpt,
-                            notBOpt,
-                            propagateOpt,
-                            filterOpt,
-                            propertyOpt,
-                            logger);
+            checker.setMonolithicExpr(abstractMonolithicExpr);
             var result = checker.check();
             if (result.isSafe()) {
                 logger.write(Logger.Level.MAINSTEP, "Model is safe, stopping CEGAR");
                 return SafetyResult.safe(result.getProof());
             }else{
                 Preconditions.checkState(result.isUnsafe());
+
                 final Trace<? extends ExprState, ? extends ExprAction> cex =
-                        result.asUnsafe().getCex();
+                            result.asUnsafe().getCex();
                 Trace trace;
                 if(checker.getValuations().size()>0){
                     List<PredState> states = new ArrayList<>();
@@ -176,14 +186,10 @@ public class CarCegarChecker<S extends ExprState, A extends ExprAction>
 
                     var actions = cex.getActions();
 
-
                     trace = Trace.of(states, actions);
                 }else{
                     trace = cex;
                 }
-
-
-
                 final ExprTraceChecker<ItpRefutation> exprTraceFwBinItpChecker =
                         ExprTraceFwBinItpChecker.create(
                                 monolithicExpr.getInitExpr(),
@@ -200,6 +206,7 @@ public class CarCegarChecker<S extends ExprState, A extends ExprAction>
                     } else {
                         final var ref = concretizationResult.asInfeasible().getRefutation();
                         final var newPred = ref.get(ref.getPruneIndex());
+                        checker.prune(ref.getPruneIndex(), false);
                         final var newPrec = PredPrec.of(newPred);
                         predPrec = predPrec.join(newPrec);
                         logger.write(Logger.Level.INFO, "Added new predicate " + newPrec + "\n");

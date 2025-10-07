@@ -18,11 +18,26 @@ package hu.bme.mit.theta.analysis.algorithm.car;
 
 import hu.bme.mit.theta.core.type.Expr;
 import hu.bme.mit.theta.core.type.booltype.BoolType;
+import hu.bme.mit.theta.core.type.booltype.FalseExpr;
+import hu.bme.mit.theta.core.type.booltype.SmartBoolExprs;
+import hu.bme.mit.theta.core.utils.PathUtils;
+import hu.bme.mit.theta.solver.UCSolver;
+import hu.bme.mit.theta.solver.utils.WithPushPop;
 
 import java.util.HashSet;
 import java.util.Set;
 
+import static hu.bme.mit.theta.core.type.booltype.BoolExprs.Not;
+import static hu.bme.mit.theta.core.type.booltype.SmartBoolExprs.And;
+import static hu.bme.mit.theta.core.utils.ExprUtils.getConjuncts;
+
 public class Node {
+
+    private boolean covered;
+
+    private  final boolean coverOpt;
+
+    private final UCSolver solver;
     public Set<Expr<BoolType>> getExprs() {
         return exprs;
     }
@@ -30,8 +45,14 @@ public class Node {
         return parent;
     }
 
-    public void setExprs(Set<Expr<BoolType>> exprs) {
-        this.exprs = exprs;
+    public void setExprs(Expr<BoolType> expr) {
+        if(!covered){
+            exprs = new HashSet<Expr<BoolType>>();
+            exprs.add(expr);
+        }
+    }
+    public void addExpr(Expr<BoolType> expr){
+        exprs.add(expr);
     }
 
     private Set<Expr<BoolType>> exprs;
@@ -40,10 +61,43 @@ public class Node {
 
     private Node parent;
 
+    //checks if its expression covers, the input expression
+    private boolean isCoveredBy(Expr<BoolType> expr){
+        if(!coverOpt || parent == null){
+            return false;
+        }
+        final boolean thisCovers;
+        try (var wpp = new WithPushPop(solver)) {
+            solver.track(PathUtils.unfold(SmartBoolExprs.Not(And(parent.getExprs())), 0));
+            solver.track(PathUtils.unfold(expr, 0));
+            thisCovers = solver.check().isUnsat();
+        }
+        if(thisCovers){
+            return true;
+        }
+        else if(parent == null){
+            return false;
+        }
+        else {
+            return parent.isCoveredBy(expr);
+        }
 
-    public Node(Expr<BoolType> expr, Node parent) {
+    }
+    public Node(Expr<BoolType> expr, Node parent, boolean coverOpt, UCSolver solver) {
         exprs = new HashSet<Expr<BoolType>>();
-        exprs.add(expr);
+        this.solver = solver;
+        this.coverOpt = coverOpt;
+        if(parent != null){
+            covered = parent.isCoveredBy(expr);
+        }else{
+            covered = false;
+        }
+
+        if(covered){
+            exprs.add(FalseExpr.getInstance());
+        }else{
+            exprs.add(expr);
+        }
         this.parent = parent;
     }
 
