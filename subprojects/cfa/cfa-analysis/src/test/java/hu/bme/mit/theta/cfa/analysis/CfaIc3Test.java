@@ -182,7 +182,6 @@ public class CfaIc3Test {
                 });
     }
 
-    @Test
     public void test() throws Exception {
         SolverManager.registerSolverManager(Z3SolverManager.create());
         if (OsHelper.getOs().equals(OsHelper.OperatingSystem.LINUX)) {

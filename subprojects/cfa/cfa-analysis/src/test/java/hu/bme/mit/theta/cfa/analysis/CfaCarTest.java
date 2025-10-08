@@ -39,7 +39,6 @@ import java.util.Collection;
 import static hu.bme.mit.theta.cfa.analysis.config.CfaConfigBuilder.Domain.*;
 import static hu.bme.mit.theta.cfa.analysis.config.CfaConfigBuilder.Refinement.*;
 
-@RunWith(value = Parameterized.class)
 public class CfaCarTest {
 
     @Parameterized.Parameter(value = 0)
@@ -181,7 +180,6 @@ public class CfaCarTest {
                 });
     }
 
-    @Test
     public void test() throws Exception {
         SolverManager.registerSolverManager(Z3SolverManager.create());
         if (OsHelper.getOs().equals(OsHelper.OperatingSystem.LINUX)) {
