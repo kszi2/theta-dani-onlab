@@ -16,6 +16,7 @@
 
 package hu.bme.mit.theta.analysis.algorithm.car;
 
+import hu.bme.mit.theta.common.container.Containers;
 import hu.bme.mit.theta.core.type.Expr;
 import hu.bme.mit.theta.core.type.booltype.BoolType;
 import hu.bme.mit.theta.core.type.booltype.FalseExpr;
@@ -84,7 +85,7 @@ public class Node {
 
     }
     public Node(Expr<BoolType> expr, Node parent, boolean coverOpt, UCSolver solver) {
-        exprs = new HashSet<Expr<BoolType>>();
+        exprs = Containers.createSet();
         this.solver = solver;
         this.coverOpt = coverOpt;
         if(parent != null){

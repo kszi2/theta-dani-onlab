@@ -30,6 +30,7 @@ import hu.bme.mit.theta.analysis.expr.refinement.ExprTraceStatus;
 import hu.bme.mit.theta.analysis.expr.refinement.ItpRefutation;
 import hu.bme.mit.theta.analysis.pred.PredState;
 import hu.bme.mit.theta.analysis.unit.UnitPrec;
+import hu.bme.mit.theta.common.container.Containers;
 import hu.bme.mit.theta.common.logging.Logger;
 import hu.bme.mit.theta.core.model.MutableValuation;
 import hu.bme.mit.theta.core.model.Valuation;
@@ -79,7 +80,7 @@ public class CarChecker<S extends ExprState, A extends ExprAction>
     private final boolean coverOpt;
     private final Logger logger;
 
-    private final HashMap<Node, Boolean> currentlyVisited;
+    private final Map<Node, Boolean> currentlyVisited;
 
     private Node root;
 
@@ -154,7 +155,7 @@ public class CarChecker<S extends ExprState, A extends ExprAction>
         currentFrameNumber = 0;
         valuations = new ArrayList<>();
         root = new Node(Not(monolithicExpr.getPropExpr()),null, coverOpt, solver);
-        currentlyVisited = new HashMap<>();
+        currentlyVisited = Containers.createMap();
 
     }
 
@@ -291,7 +292,7 @@ public class CarChecker<S extends ExprState, A extends ExprAction>
                             .filter(model.toMap()::containsKey)
                             .forEach(decl -> filteredModel.put(decl, model.eval(decl).get()));
                     if (filterOpt) {
-                        var vars = new HashSet<>(filteredModel.toMap().keySet());
+                        var vars = Containers.createSet(filteredModel.toMap().keySet());
                         for (var var : vars) {
                             if (!(var.getType() instanceof BoolType)) {
                                 continue;
@@ -512,7 +513,6 @@ public class CarChecker<S extends ExprState, A extends ExprAction>
         if(status.isInfeasible()){
             final var ref = status.asInfeasible().getRefutation();
             if(pruneOpt){
-                pruneLength++;
                 prune(ref.getPruneIndex()-1,true);
                 noNodeIsVisited();
                 return null;

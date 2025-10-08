@@ -190,25 +190,25 @@ public class StsCli {
 
 
 
-    @Parameter(names = "--version", description = "Display version", help = true)
+    @Parameter(names = "--formerFrames", description = "Display version", help = true)
     boolean formerFrames = true;
 
-    @Parameter(names = "--version", description = "Display version", help = true)
+    @Parameter(names = "--unSat", description = "Display version", help = true)
     boolean unSat = true;
 
-    @Parameter(names = "--version", description = "Display version", help = true)
+    @Parameter(names = "--notB", description = "Display version", help = true)
     boolean notB = true;
 
-    @Parameter(names = "--version", description = "Display version", help = true)
+    @Parameter(names = "--propagate", description = "Display version", help = true)
     boolean propagate = true;
 
-    @Parameter(names = "--version", description = "Display version", help = true)
+    @Parameter(names = "--filter", description = "Display version", help = true)
     boolean filter = true;
 
-    @Parameter(names = "--version", description = "Display version", help = true)
+    @Parameter(names = "--property", description = "Display version", help = true)
     boolean property = true;
 
-    @Parameter(names = "--version", description = "Display version", help = true)
+    @Parameter(names = "--cover", description = "Display version", help = true)
     boolean cover = true;
 
 

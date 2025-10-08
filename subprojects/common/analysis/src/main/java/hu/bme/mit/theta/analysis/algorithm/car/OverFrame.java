@@ -16,6 +16,7 @@
 package hu.bme.mit.theta.analysis.algorithm.car;
 
 import hu.bme.mit.theta.analysis.algorithm.bounded.MonolithicExpr;
+import hu.bme.mit.theta.common.container.Containers;
 import hu.bme.mit.theta.core.model.MutableValuation;
 import hu.bme.mit.theta.core.model.Valuation;
 import hu.bme.mit.theta.core.type.Expr;
@@ -44,7 +45,7 @@ public class OverFrame {
         this.parent = parent;
         this.solver = solver;
         this.monolithicExpr = monolithicExpr;
-        exprs = new HashSet<>();
+        exprs = Containers.createSet();
     }
 
     public void refine(Expr<BoolType> expression) {
