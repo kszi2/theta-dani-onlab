@@ -16,44 +16,26 @@
 
 package hu.bme.mit.theta.analysis.algorithm.modular
 
-import hu.bme.mit.theta.analysis.Action
+import hu.bme.mit.theta.analysis.Cex
 import hu.bme.mit.theta.analysis.Prec
-import hu.bme.mit.theta.analysis.State
-import hu.bme.mit.theta.analysis.Trace
+import hu.bme.mit.theta.analysis.algorithm.Proof
 import hu.bme.mit.theta.analysis.algorithm.SafetyChecker
 import hu.bme.mit.theta.analysis.algorithm.SafetyResult
-import hu.bme.mit.theta.analysis.algorithm.arg.ARG
-import hu.bme.mit.theta.analysis.algorithm.cegar.ArgAbstractor
-import hu.bme.mit.theta.analysis.algorithm.cegar.ArgCegarChecker
-import hu.bme.mit.theta.analysis.algorithm.cegar.ArgRefiner
-import hu.bme.mit.theta.common.logging.Logger
-import hu.bme.mit.theta.common.logging.NullLogger
 
 /**
- * A modular safety checker that verifies a model by checking it with a CEGAR loop.
+ * A modular safety checker that verifies a model using a list of safety checkers.
  *
- * @param M The model type (e.g. XCFA) being verified.
- * @param S The state type.
- * @param A The action type.
+ * @param W The witness type.
+ * @param R The counterexample type.
  * @param P The precision type.
- * @param model The model to be verified.
- * @param abstractor The abstractor for the CEGAR loop.
- * @param refiner The refiner for the CEGAR loop.
- * @param logger The logger for logging.
+ * @param checkers The list of safety checkers to use.
  */
-class ModularChecker<M, S : State, A : Action, P : Prec>
-@JvmOverloads
-constructor(
-  private val model: M,
-  private val abstractor: ArgAbstractor<S, A, P>,
-  private val refiner: ArgRefiner<S, A, P>,
-  private val logger: Logger = NullLogger.getInstance(),
-) : SafetyChecker<ARG<S, A>, Trace<S, A>, P> {
+class ModularChecker<W : Proof, R : Cex, P : Prec>(
+  private val checkers: List<SafetyChecker<W, R, P>>,
+) : SafetyChecker<W, R, P> {
 
-  private val cegarChecker = ArgCegarChecker.create(abstractor, refiner, logger)
+  override fun check(prec: P?): SafetyResult<W, R> {
 
-  override fun check(prec: P?): SafetyResult<ARG<S, A>, Trace<S, A>> {
-    logger.write(Logger.Level.MAINSTEP, "Starting modular checking on $model\n")
-    return cegarChecker.check(prec)
+    return checkers.first().check(prec)
   }
 }
