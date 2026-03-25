@@ -196,6 +196,29 @@ class XcfaCutsetsTest {
     assertTrue(model.getMinimalCutsets().isEmpty())
   }
 
+  @Test
+  fun `getMinimalCutsetsWithPartitionSizes bundles cutset and counts`() {
+    // init --e1--> mid --e2--> error
+    // Two minimal cutsets: {e1} and {e2}
+    // {e1}: before=1 (init), after=2 (mid, error)
+    // {e2}: before=2 (init, mid), after=1 (error)
+    lateinit var e1: XcfaEdge
+    lateinit var e2: XcfaEdge
+    val model =
+      xcfa("test") {
+        procedure("main") {
+            e1 = (init to "mid") { skip() }
+            e2 = ("mid" to err) { skip() }
+          }
+          .start()
+      }
+
+    val results = model.getMinimalCutsetsWithPartitionSizes()
+    assertEquals(2, results.size)
+    assertEquals(CutsetWithPartitionSizes(setOf(e1), 1, 2), results[0])
+    assertEquals(CutsetWithPartitionSizes(setOf(e2), 2, 1), results[1])
+  }
+
   // -------------------------------------------------------------------------
   // cutsetPartitionSizes tests
   // -------------------------------------------------------------------------
@@ -262,6 +285,31 @@ class XcfaCutsetsTest {
     val p = proc("p", init, Optional.of(error), setOf(init, a, b, error), setOf(e1, e2, e3, e4))
 
     assertEquals(Pair(3, 1), p.cutsetPartitionSizes(setOf(e3, e4), init, error))
+  }
+
+  // -------------------------------------------------------------------------
+  // mostBalancedCutset tests
+  // -------------------------------------------------------------------------
+
+  @Test
+  fun `mostBalancedCutset returns null for empty list`() {
+    assertTrue(emptyList<CutsetWithPartitionSizes>().mostBalancedCutset() == null)
+  }
+
+  @Test
+  fun `mostBalancedCutset picks the entry with smallest abs before minus after`() {
+    // before=1/after=4 → diff=3, before=3/after=2 → diff=1 (winner), before=5/after=1 → diff=4
+    val a = CutsetWithPartitionSizes(emptySet(), 1, 4)
+    val b = CutsetWithPartitionSizes(emptySet(), 3, 2)
+    val c = CutsetWithPartitionSizes(emptySet(), 5, 1)
+    assertEquals(b, listOf(a, b, c).mostBalancedCutset())
+  }
+
+  @Test
+  fun `mostBalancedCutset returns first entry on tie`() {
+    val a = CutsetWithPartitionSizes(emptySet(), 2, 4) // diff=2
+    val b = CutsetWithPartitionSizes(emptySet(), 4, 2) // diff=2
+    assertEquals(a, listOf(a, b).mostBalancedCutset())
   }
 
   // -------------------------------------------------------------------------

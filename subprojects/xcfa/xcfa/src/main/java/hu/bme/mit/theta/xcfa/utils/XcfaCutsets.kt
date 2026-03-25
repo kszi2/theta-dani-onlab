@@ -20,6 +20,9 @@ import hu.bme.mit.theta.xcfa.model.XcfaEdge
 import hu.bme.mit.theta.xcfa.model.XcfaLocation
 import hu.bme.mit.theta.xcfa.model.XcfaProcedure
 
+/** A minimal edge cutset together with the vertex counts on each side of the cut. */
+data class CutsetWithPartitionSizes(val cutset: Set<XcfaEdge>, val before: Int, val after: Int)
+
 /**
  * Returns all minimal edge cutsets of the XCFA.
  *
@@ -37,6 +40,29 @@ fun XCFA.getMinimalCutsets(): Set<Set<XcfaEdge>> =
         .orElse(emptySet())
     }
     .toSet()
+
+/**
+ * Returns all minimal edge cutsets of the XCFA together with their partition sizes.
+ *
+ * Combines [getMinimalCutsets] and [cutsetPartitionSizes]: for every cutset found across all
+ * applicable init procedures, computes the number of locations before and after the cut and
+ * packages both into a [CutsetWithPartitionSizes].
+ *
+ * @return list of [CutsetWithPartitionSizes], one entry per minimal cutset
+ */
+fun XCFA.getMinimalCutsetsWithPartitionSizes(): List<CutsetWithPartitionSizes> =
+  initProcedures
+    .flatMap { (proc, _) ->
+      proc.errorLoc
+        .map { errorLoc ->
+          proc.getMinimalEdgeCutsets(proc.initLoc, errorLoc).map { cutset ->
+            val (before, after) = proc.cutsetPartitionSizes(cutset, proc.initLoc, errorLoc)
+            CutsetWithPartitionSizes(cutset, before, after)
+          }
+        }
+        .orElse(emptyList())
+    }
+    .sortedBy { it.before }
 
 /**
  * Returns all minimal edge cutsets between [source] and [sink] in this procedure's control-flow
@@ -148,10 +174,18 @@ fun XcfaProcedure.cutsetPartitionSizes(
 }
 
 /**
+ * Returns the most balanced cutset from an ordered [List] of [CutsetWithPartitionSizes], i.e. the
+ * entry that minimises `|before − after|`. When several entries tie, the first one in the list is
+ * returned. Returns `null` if the list is empty.
+ */
+fun List<CutsetWithPartitionSizes>.mostBalancedCutset(): CutsetWithPartitionSizes? =
+  minByOrNull { kotlin.math.abs(it.before - it.after) }
+
+/**
  * BFS from [start], traversing edges in the forward or backward direction while skipping all edges
  * in [blockedEdges]. Returns the set of locations visited (including [start] itself).
  */
-private fun locationsReachableWithout(
+internal fun locationsReachableWithout(
   start: XcfaLocation,
   blockedEdges: Set<XcfaEdge>,
   forward: Boolean,
