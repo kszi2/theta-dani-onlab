@@ -15,11 +15,18 @@
  */
 package hu.bme.mit.theta.xcfa.utils
 
+import hu.bme.mit.theta.core.decl.VarDecl
+import hu.bme.mit.theta.core.model.Valuation
+import hu.bme.mit.theta.core.stmt.Stmts.Assign
 import hu.bme.mit.theta.core.type.Expr
+import hu.bme.mit.theta.core.type.Type
 import hu.bme.mit.theta.xcfa.model.EmptyMetaData
 import hu.bme.mit.theta.xcfa.model.NopLabel
+import hu.bme.mit.theta.xcfa.model.SequenceLabel
+import hu.bme.mit.theta.xcfa.model.StmtLabel
 import hu.bme.mit.theta.xcfa.model.XCFA
 import hu.bme.mit.theta.xcfa.model.XcfaEdge
+import hu.bme.mit.theta.xcfa.model.XcfaLabel
 import hu.bme.mit.theta.xcfa.model.XcfaLocation
 import hu.bme.mit.theta.xcfa.model.XcfaProcedure
 import java.util.IdentityHashMap
@@ -76,9 +83,9 @@ private fun buildBeforeXcfa(
 ): XCFA {
   val locMap = freshCopies(proc, beforeLocs)
 
-  // New final location representing "the cutset was reached".
+  // New error location representing "the cutset was reached".
   val cutFinalLoc =
-    XcfaLocation("${proc.name}_cut_final", final = true, metadata = EmptyMetaData)
+    XcfaLocation("${proc.name}_cut_final", error = true, metadata = EmptyMetaData)
 
   val allLocs: MutableSet<XcfaLocation> = LinkedHashSet(locMap.values)
   allLocs.add(cutFinalLoc)
@@ -105,9 +112,8 @@ private fun buildBeforeXcfa(
       locs = allLocs,
       edges = edgeSet,
       initLoc = locMap[proc.initLoc]!!,
-      finalLoc = Optional.of(cutFinalLoc),
-      // The error location is in the after-partition by definition; omit it here.
-      errorLoc = Optional.empty(),
+      finalLoc = Optional.empty(),
+      errorLoc = Optional.of(cutFinalLoc),
     )
 
   return wrapInXcfa("${original.name}_before", original, beforeProc, params)
@@ -194,6 +200,48 @@ private fun addEdge(edge: XcfaEdge, edgeSet: MutableSet<XcfaEdge>) {
 }
 
 /**
+ * Returns a copy of this XCFA where every entry edge of the (single) init procedure has the
+ * given [valuation]'s variable assignments prepended. Edges whose source is the init location
+ * get a [SequenceLabel] of `[x := v, ..., originalLabel]`; all other edges are unchanged.
+ *
+ * If [valuation] contains no declared variables the original XCFA is returned as-is.
+ */
+fun XCFA.withEntryAssignments(valuation: Valuation): XCFA {
+  val (proc, params) = initProcedures.single()
+
+  @Suppress("UNCHECKED_CAST")
+  val assignLabels: List<XcfaLabel> = valuation.decls.mapNotNull { decl ->
+    val value = valuation.eval(decl).orElse(null) ?: return@mapNotNull null
+    StmtLabel(Assign(decl as VarDecl<Type>, value as Expr<Type>))
+  }
+  if (assignLabels.isEmpty()) return this
+
+  val newEdges = mutableSetOf<XcfaEdge>()
+  for (edge in proc.edges) {
+    if (edge.source === proc.initLoc) {
+      val newLabel = SequenceLabel(assignLabels + edge.label)
+      val newEdge = XcfaEdge(edge.source, edge.target, newLabel, edge.metadata)
+      edge.source.outgoingEdges.remove(edge)
+      edge.target.incomingEdges.remove(edge)
+      edge.source.outgoingEdges.add(newEdge)
+      edge.target.incomingEdges.add(newEdge)
+      newEdges.add(newEdge)
+    } else {
+      newEdges.add(edge)
+    }
+  }
+
+  val initProcSet = initProcedures.mapTo(HashSet()) { it.first }
+  val nonInitProcs = procedures.filter { it !in initProcSet }
+  val newProc = proc.copy(edges = newEdges)
+  return XCFA(name, globalVars).also { xcfa ->
+    newProc.parent = xcfa
+    nonInitProcs.forEach { it.parent = xcfa }
+    xcfa.recreate(setOf(newProc) + nonInitProcs, listOf(Pair(newProc, params)))
+  }
+}
+
+/**
  * Wraps a single manually-built [XcfaProcedure] in a new [XCFA], sharing the global variables
  * of [original]. Uses [XCFA.recreate] to inject the procedure without re-running optimisation
  * passes.
@@ -206,6 +254,11 @@ private fun wrapInXcfa(
 ): XCFA {
   val xcfa = XCFA(name, original.globalVars)
   proc.parent = xcfa
-  xcfa.recreate(setOf(proc), listOf(Pair(proc, params)))
+  // Non-init procedures (threads, helpers) are not split; carry them over unchanged
+  // so that StartLabel resolution can find them during analysis.
+  val initProcSet = original.initProcedures.mapTo(HashSet()) { it.first }
+  val nonInitProcs = original.procedures.filter { it !in initProcSet }
+  nonInitProcs.forEach { it.parent = xcfa }
+  xcfa.recreate(setOf(proc) + nonInitProcs, listOf(Pair(proc, params)))
   return xcfa
 }

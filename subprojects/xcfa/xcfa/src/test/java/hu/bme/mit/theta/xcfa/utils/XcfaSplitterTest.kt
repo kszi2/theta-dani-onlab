@@ -88,8 +88,8 @@ class XcfaSplitterTest {
     // Locations: init-copy + cut_final
     assertEquals(2, beforeProc.locs.size)
     assertTrue(beforeProc.locs.any { it.initial })
-    assertTrue(beforeProc.locs.any { it.final })
-    assertFalse(beforeProc.locs.any { it.error })
+    assertTrue(beforeProc.locs.any { it.error })
+    assertFalse(beforeProc.locs.any { it.final })
   }
 
   @Test
@@ -148,8 +148,8 @@ class XcfaSplitterTest {
     // Locations: init-copy + A-copy + cut_final
     assertEquals(3, beforeProc.locs.size)
     assertTrue(beforeProc.locs.any { it.initial })
-    assertTrue(beforeProc.locs.any { it.final })
-    assertFalse(beforeProc.locs.any { it.error })
+    assertTrue(beforeProc.locs.any { it.error })
+    assertFalse(beforeProc.locs.any { it.final })
   }
 
   @Test
@@ -162,7 +162,7 @@ class XcfaSplitterTest {
 
     // Two edges: e1 (init→A) and the replacement cut edge (A→cut_final with e2's label).
     assertEquals(2, beforeProc.edges.size)
-    val cutEdge = beforeProc.edges.single { it.target.final }
+    val cutEdge = beforeProc.edges.single { it.target.error }
     assertEquals(e2.label, cutEdge.label)
   }
 
@@ -231,7 +231,7 @@ class XcfaSplitterTest {
     // deduplicates them to a single edge.
     assertEquals(2, beforeProc.locs.size)
     assertEquals(1, beforeProc.edges.size)
-    assertTrue(beforeProc.edges.all { it.target.final })
+    assertTrue(beforeProc.edges.all { it.target.error })
     assertTrue(beforeProc.edges.all { it.label == NopLabel }) // e1 and e2 were NopLabel
 
     // After: cut_init + A + B + error; two NopLabel entry edges + two inner edges
@@ -246,7 +246,7 @@ class XcfaSplitterTest {
   // ---------------------------------------------------------------------------
 
   @Test
-  fun `before XCFA initLoc is initial and finalLoc is cut_final`() {
+  fun `before XCFA initLoc is initial and errorLoc is cut_final`() {
     val (xcfa, e1, _) = linearXcfa()
     val cutset = CutsetWithPartitionSizes(setOf(e1), before = 1, after = 2)
 
@@ -254,9 +254,9 @@ class XcfaSplitterTest {
     val beforeProc = before.initProcedures.single().first
 
     assertTrue(beforeProc.initLoc.initial)
-    assertTrue(beforeProc.finalLoc.isPresent)
-    assertTrue(beforeProc.finalLoc.get().final)
-    assertFalse(beforeProc.errorLoc.isPresent)
+    assertTrue(beforeProc.errorLoc.isPresent)
+    assertTrue(beforeProc.errorLoc.get().error)
+    assertFalse(beforeProc.finalLoc.isPresent)
   }
 
   @Test
