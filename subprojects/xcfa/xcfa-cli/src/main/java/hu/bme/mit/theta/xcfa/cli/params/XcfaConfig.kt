@@ -242,9 +242,25 @@ data class BackendConfig<T : SpecBackendConfig>(
         Backend.MDD -> MddConfig() as T
         Backend.NONE -> null
         Backend.IC3 -> Ic3Config() as T
+        Backend.DSS -> DssConfig() as T
       }
   }
 }
+
+data class DssConfig(
+  @Parameter(
+    names = ["--dss-decomposition"],
+    description = "How to decompose the input procedure into DSS blocks",
+  )
+  var decomposition: DssDecomposition = DssDecomposition.LINEAR,
+  @Parameter(
+    names = ["--dss-target-block-count"],
+    description = "Target block count for --dss-decomposition MERGE; ignored otherwise",
+  )
+  var targetBlockCount: Int = 10,
+  @Parameter(names = ["--dss-executor"], description = "Which DSS actor-runtime driver to use")
+  var executor: DssExecutor = DssExecutor.CONCURRENT,
+) : SpecBackendConfig
 
 data class CegarConfig(
   @Parameter(names = ["--initprec"], description = "Initial precision")

@@ -45,6 +45,9 @@ dependencies {
     implementation(project(":theta-graph-solver"))
     implementation(project(":theta-cat"))
     implementation(project(":theta-cfa"))
+    implementation(project(":theta-xcfa-dss-decomposition"))
+    implementation(project(":theta-xcfa-dss-analysis"))
+    implementation(project(":theta-xcfa-dss-actor"))
     implementation(files(rootDir.resolve(Deps.z3legacy)))
     implementation(Deps.z3)
     implementation("com.zaxxer:nuprocess:2.0.5")
@@ -54,6 +57,16 @@ dependencies {
 
 application {
     mainClass.set("hu.bme.mit.theta.xcfa.cli.XcfaCli")
+}
+
+tasks.withType<Test> {
+    // DSS's concurrent executor runs real, multi-threaded Z3 solving (one thread per block) - this
+    // has been observed to leave native solver state in a way that intermittently breaks unrelated,
+    // single-threaded solver calls in later test classes of the same JVM (flaky NotSolvableException
+    // failures in XcfaCliNonTerminationValidateTest/VerifyTest depending on class execution order,
+    // never reproducible with XcfaCliDssTest excluded). A fresh JVM per test class sidesteps whatever
+    // shared native state is at fault, at the cost of slightly slower test runs.
+    forkEvery = 1
 }
 
 archivePackaging {

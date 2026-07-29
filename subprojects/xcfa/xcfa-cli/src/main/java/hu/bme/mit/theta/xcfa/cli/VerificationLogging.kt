@@ -113,16 +113,29 @@ internal fun postVerificationLogging(
         forceEnabledOutput || config.outputConfig.witnessConfig.enabled == WitnessLevel.ALL -> {
           if (safetyResult.isUnsafe && safetyResult.asUnsafe().cex != null) {
             val trace = retrieveTrace(safetyResult)
-            val concrTrace: Trace<XcfaState<ExplState>, XcfaAction> =
-              concretizeTrace(trace, config, parseContext)
+            // Not every checker's UNSAFE result carries a concrete counterexample trace - DSS's
+            // (build-order step 8) is a real example: `packVcond`/`unpackVcond` aren't
+            // implemented (doc/DSS.md's Known Limitations), so its UNSAFE verdict is reported via
+            // an EmptyCex, which is a real Cex but not a Trace. concretizeTrace's own unchecked
+            // cast to Trace would otherwise throw here, silently skipping the witness-writer calls
+            // below it too (an uncaught exception from this whole `when` branch would jump past
+            // them to the outer try/catch's generic "Could not output files" log line).
+            if (trace is Trace<*, *>) {
+              val concrTrace: Trace<XcfaState<ExplState>, XcfaAction> =
+                concretizeTrace(trace, config, parseContext)
 
-            writeTraceAsDot(resultFolder, concrTrace, logger)
+              writeTraceAsDot(resultFolder, concrTrace, logger)
 
-            writeTraceAsPlantuml(resultFolder, trace, logger)
+              writeTraceAsPlantuml(resultFolder, trace, logger)
 
-            writeTraceAsOptimizedPlantuml(resultFolder, concrTrace, logger)
+              writeTraceAsOptimizedPlantuml(resultFolder, concrTrace, logger)
 
-            writeTraceAsCinPlantUml(resultFolder, concrTrace, logger)
+              writeTraceAsCinPlantUml(resultFolder, concrTrace, logger)
+            } else {
+              logger.info(
+                "No concrete counterexample trace available for this backend's UNSAFE result; skipping trace/plantuml output."
+              )
+            }
           }
 
           try {

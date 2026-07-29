@@ -93,7 +93,35 @@ enum class Backend {
   TRACEGEN,
   MDD,
   IC3,
+  DSS,
   NONE,
+}
+
+/**
+ * Which `DssBlockDecomposition` (`xcfa-dss-decomposition`) cuts the input procedure into blocks -
+ * see `doc/DSS.md`. `INLINING` (CPAchecker's call-string-sensitive decomposition) is not
+ * implemented, so it isn't offered here.
+ */
+enum class DssDecomposition {
+  /** `blk_linear`: a block boundary at every branch/join point/dead end. */
+  LINEAR,
+  /** `LINEAR`, then horizontal/vertical merging down toward [DssConfig.dssTargetBlockCount]. */
+  MERGE,
+  /** The whole procedure as a single block - the `NO_DECOMPOSITION` degenerate case. */
+  NONE,
+}
+
+/**
+ * Which DSS actor-runtime driver runs the decomposed block graph - see `doc/DSS.md`'s
+ * `DssActorRuntime`/`SequentialDssExecutor`. Simplified from CPAchecker's confirmed three
+ * (`DSS`/`SINGLE_WORKER`/`SEQUENTIAL`) to two, since nothing in this port has needed to distinguish
+ * `SINGLE_WORKER` from `SEQUENTIAL`.
+ */
+enum class DssExecutor {
+  /** One platform thread per block (`runDssActors`). */
+  CONCURRENT,
+  /** Deterministic, single-threaded (`runDssActorsSequentially`). */
+  SEQUENTIAL,
 }
 
 enum class POR(

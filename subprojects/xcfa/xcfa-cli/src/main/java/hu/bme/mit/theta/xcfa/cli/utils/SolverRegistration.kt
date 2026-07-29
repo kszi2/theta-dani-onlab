@@ -45,3 +45,25 @@ fun registerAllSolverManagers(home: String, logger: Logger) {
   SolverManager.registerSolverManager(smtLibSolverManager)
   logger.write(Logger.Level.INFO, "Registered SMT-LIB SolverManager\n")
 }
+
+private var defaultSolversRegistered = false
+
+/**
+ * Idempotent convenience wrapper around [registerAllSolverManagers]: registers Theta's built-in
+ * solver managers (Z3, JavaSMT, SMT-LIB) exactly once per process, no matter how many times or from
+ * how many call sites this is invoked - useful for callers (like `xcfa-dss-analysis`'s tests and
+ * `PredicateBlockBehavior`) that need solver names in an
+ * [hu.bme.mit.theta.xcfa.cli.params.XcfaConfig] (e.g. `"Z3"`) to resolve through the process-wide
+ * [SolverManager] registry, the same way a real `xcfa-cli` invocation's own startup populates it,
+ * without needing to reason about whether some other caller already did this first.
+ */
+@Synchronized
+fun ensureDefaultSolversRegistered(
+  config: hu.bme.mit.theta.xcfa.cli.params.XcfaConfig<*, *>,
+  logger: Logger,
+) {
+  if (!defaultSolversRegistered) {
+    registerAllSolverManagers(config.backendConfig.solverHome, logger)
+    defaultSolversRegistered = true
+  }
+}

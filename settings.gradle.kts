@@ -47,6 +47,9 @@ include(
     "xcfa/xcfa2chc",
     "xcfa/xcfa-analysis",
     "xcfa/xcfa-cli",
+    "xcfa/dss/xcfa-dss-decomposition",
+    "xcfa/dss/xcfa-dss-analysis",
+    "xcfa/dss/xcfa-dss-actor",
 
     "xta/xta",
     "xta/xta-analysis",
