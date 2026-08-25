@@ -19,15 +19,22 @@ import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
 
 import hu.bme.mit.theta.solver.*;
-import java.util.HashSet;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 public final class Z3SolverManager extends SolverManager {
 
     private static final String NAME = "Z3";
 
     private boolean closed = false;
-    private final Set<SolverBase> instantiatedSolvers = new HashSet<>();
+    // A ConcurrentHashMap-backed set, not a plain HashSet: DSS's block actors each build their own
+    // checker (and thus call createSolver()/createItpSolver()) from independent threads running
+    // concurrently, all against this one process-wide-registered manager instance. A plain HashSet
+    // mutated with no synchronization from multiple threads at once is undefined behavior - and,
+    // being hit on every single per-block checker construction, was the most concrete, reproducible
+    // candidate for the JVM instability DSS's concurrent executor used to hit before each block got
+    // its own genuinely independent solver lifecycle (see doc/DSS-bugs-and-verification.md).
+    private final Set<SolverBase> instantiatedSolvers = ConcurrentHashMap.newKeySet();
 
     private Z3SolverManager() {}
 

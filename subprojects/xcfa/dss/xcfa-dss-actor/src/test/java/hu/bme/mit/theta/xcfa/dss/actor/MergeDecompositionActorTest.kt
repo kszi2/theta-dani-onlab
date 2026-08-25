@@ -21,6 +21,7 @@ import hu.bme.mit.theta.frontend.ParseContext
 import hu.bme.mit.theta.xcfa.cli.checkers.getCegarChecker
 import hu.bme.mit.theta.xcfa.cli.params.defaultPredicateCegarConfig
 import hu.bme.mit.theta.xcfa.cli.utils.ensureDefaultSolversRegistered
+import hu.bme.mit.theta.xcfa.dss.analysis.DssCheckerRoster
 import hu.bme.mit.theta.xcfa.dss.analysis.runWorkerConfig
 import hu.bme.mit.theta.xcfa.dss.decomposition.Block
 import hu.bme.mit.theta.xcfa.dss.decomposition.BlockGraph
@@ -80,14 +81,10 @@ class MergeDecompositionActorTest {
     },
   ): DssResult {
     val procedure = wholeProgram.procedures.single()
+    val checkerRoster = DssCheckerRoster(listOf { x -> cegarChecker(x) })
     return assertTimeoutPreemptively<DssResult>(Duration.ofSeconds(30)) {
       executor(blockGraph) { block ->
-        PredicateBlockBehavior(
-          wholeProgram,
-          procedure,
-          block,
-          checkerFactory = { x -> cegarChecker(x) },
-        )
+        PredicateBlockBehavior(wholeProgram, procedure, block, checkerRoster)
       }
     }
   }

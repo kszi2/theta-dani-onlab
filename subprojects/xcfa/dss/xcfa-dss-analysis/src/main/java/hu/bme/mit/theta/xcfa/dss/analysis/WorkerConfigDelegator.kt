@@ -36,7 +36,13 @@ import hu.bme.mit.theta.xcfa.model.XCFA
 typealias XcfaChecker =
   SafetyChecker<LocationInvariants, Trace<XcfaState<PtrState<*>>, XcfaAction>, XcfaPrec<*>>
 
-private val workerConfigLock = Any()
+/**
+ * A function that builds an [XcfaChecker] for a given [XCFA] - the shape every DSS worker's
+ * "ordinary, already-existing analysis" (plan §0/§3) takes. Named so
+ * [DssCheckerRoster]/[DssCheckerSelectionStrategy] have something to hold a *list* of, instead of
+ * every signature spelling out `(XCFA) -> XcfaChecker`.
+ */
+typealias CheckerFactory = (XCFA) -> XcfaChecker
 
 /**
  * Runs [xcfa] through a checker [checkerFactory] builds for it, exactly as a standalone `xcfa-cli`
@@ -78,28 +84,64 @@ private val workerConfigLock = Any()
  * not just one block's) is the validated fix: passed as [initialPrecision], it gives even a
  * branch-free block enough predicates to compute a precise summary at its exit.
  *
- * Serialized across a single process-wide lock: running this concurrently from multiple threads (as
- * the actor runtime's one-thread-per-block model does, build-order step 4/5) crashed the JVM
- * outright (`EXCEPTION_ACCESS_VIOLATION` inside Z3's native library) the first time this was
- * exercised with real, concurrent per-block checks - confirmed reproducible, not a one-off. This
- * resolves the plan's own open question on solver/thread affinity, just not the way CPAchecker
- * resolves it: CPAchecker pins each block's analysis to a single thread for its whole lifetime,
- * allowing genuine parallelism across blocks (different blocks on different threads, each solver
- * only ever touched by the one thread that created it). This is cruder - one global lock means no
- * two [runWorkerConfig] calls ever run concurrently at all, anywhere, sacrificing parallelism
- * entirely for now - but it is what could be verified safe under time pressure, and correctness
- * (build-order step 5's actual goal) does not depend on real parallelism; performance does, and
- * that is explicitly build-order step 6's concern (`SINGLE_WORKER` then `DSS` executors). Revisit
- * once it is clear whether Z3's binding here is safe under CPAchecker's finer-grained
- * one-thread-per-solver discipline, which would let this lock be narrowed or removed.
+ * **No process-wide lock.** [checkerFactory] already builds a brand-new checker - and, inside it,
+ * `getCegarChecker` already calls `SolverFactory.createSolver()` fresh - on every single call,
+ * which means every call to this function already gets its own, never-shared Z3 `Solver` (and, one
+ * layer down, its own native `Context`): see
+ * [Z3SolverFactory][hu.bme.mit.theta.solver.z3.Z3SolverFactory] /`Z3LegacySolverFactory`'s
+ * `createSolverInternal`, `new com.microsoft.z3.Context()` every time. Combined with the actor
+ * runtime's one-thread-per-block model (`DssBlockActor` in `xcfa-dss-actor`, one dedicated platform
+ * `Thread` for a block's entire lifetime), that means every solver this function ever creates is
+ * both freshly-created *and* touched by exactly one thread for its whole life - no two blocks'
+ * checks ever share a solver object, and no thread ever reaches into a solver another thread
+ * created. This is this port's version of CPAchecker's own real answer to solver/thread affinity:
+ * one thread owns one block's solver for that block's lifetime, letting genuine parallelism across
+ * blocks replace this file's earlier single global lock.
+ *
+ * A process-wide lock here *did* crash the JVM outright the first time real, concurrent per-block
+ * checks were tried without one (`EXCEPTION_ACCESS_VIOLATION` inside Z3's native library) - but the
+ * actual, confirmed root cause turned out to be two ordinary, unsynchronized `java.util.HashSet`s
+ * mutated by every single checker construction with no regard for which thread was calling:
+ * `Z3SolverManager.instantiatedSolvers` (both the legacy and the new `solver-z3legacy`/`solver-z3`
+ * managers) and `MonitorCheckpoint.registeredMonitors` (touched by `getCegarChecker`'s own
+ * `MonitorCheckpoint.reset()`/`.register(...)` on every call, since `cexMonitor` defaults to
+ * `CexMonitorOptions.CHECK`). Concurrent, unsynchronized mutation of a plain `HashSet` from several
+ * threads at once is undefined behavior in the JVM - a real, confirmed bug regardless of what else
+ * was going on, and hit on literally every checker construction. Both are now backed by
+ * `ConcurrentHashMap.newKeySet()` instead.
+ *
+ * Fixing those two was **not** sufficient on its own, though - re-tested empirically, not assumed:
+ * running the full concurrent suite with no lock at all still crashed the JVM
+ * (`EXCEPTION_INT_DIVIDE_BY_ZERO` inside `libz3legacy.dll` this time, a different crash signature
+ * than the original `EXCEPTION_ACCESS_VIOLATION` but the same underlying class of problem), which
+ * means at least part of the original fragility genuinely is native, inside Z3's own legacy
+ * binding, not just Theta's Java-level bookkeeping around it. What the codebase's own
+ * solver-thread-affinity plan already suspected: Z3's native `Context` *construction* itself is not
+ * safe to do concurrently from multiple threads at once, even though each resulting `Context` is
+ * only ever touched by the one thread that created it afterward (Theta's
+ * `Z3SolverFactory.createSolverInternal`/ `Z3LegacySolverFactory`'s equivalent, `new
+ * com.microsoft.z3.Context()`, backed by shared native memory-management/parameter-registration
+ * state under the hood).
+ *
+ * So the lock is narrowed, not removed: [checkerFactory] - the only place a fresh
+ * `Solver`/`Context` gets created, since [runWorkerConfig] is called fresh per recheck and
+ * `getCegarChecker` calls `SolverFactory.createSolver()` eagerly during construction - still runs
+ * under a lock, but `checker.check(...)`, where all the actual, expensive ARG
+ * exploration/abstraction/refinement work happens, now runs outside it. Different blocks' checkers
+ * are still built one at a time, but once built, their solving genuinely proceeds in parallel -
+ * real parallelism for the overwhelming majority of the work, with only the comparatively cheap act
+ * of standing up a new `Context` serialized to stay inside whatever discipline the native library
+ * actually needs. Confirmed via repeated stress runs of the full concurrent suite
+ * (`xcfa-dss-actor`'s cyclic/nested/merge/diverse-program tests) with no further native crashes -
+ * see `doc/DSS-bugs-and-verification.md` for the full writeup.
  */
+private val solverConstructionLock = Any()
+
 fun runWorkerConfig(
   xcfa: XCFA,
-  checkerFactory: (XCFA) -> XcfaChecker,
+  checkerFactory: CheckerFactory,
   initialPrecision: XcfaPrec<*>? = null,
 ): SafetyResult<LocationInvariants, Trace<XcfaState<PtrState<*>>, XcfaAction>> {
-  synchronized(workerConfigLock) {
-    val checker = checkerFactory(xcfa)
-    return if (initialPrecision != null) checker.check(initialPrecision) else checker.check()
-  }
+  val checker = synchronized(solverConstructionLock) { checkerFactory(xcfa) }
+  return if (initialPrecision != null) checker.check(initialPrecision) else checker.check()
 }

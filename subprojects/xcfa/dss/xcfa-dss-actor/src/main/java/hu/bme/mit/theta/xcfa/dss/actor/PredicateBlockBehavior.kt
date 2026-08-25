@@ -19,7 +19,7 @@ import hu.bme.mit.theta.core.type.Expr
 import hu.bme.mit.theta.core.type.booltype.BoolExprs.False
 import hu.bme.mit.theta.core.type.booltype.BoolExprs.Or
 import hu.bme.mit.theta.core.type.booltype.BoolType
-import hu.bme.mit.theta.xcfa.dss.analysis.XcfaChecker
+import hu.bme.mit.theta.xcfa.dss.analysis.DssCheckerRoster
 import hu.bme.mit.theta.xcfa.dss.analysis.extractBlockXcfa
 import hu.bme.mit.theta.xcfa.dss.analysis.globalAssumePredicatePrecision
 import hu.bme.mit.theta.xcfa.dss.analysis.packPostcondition
@@ -67,21 +67,45 @@ import hu.bme.mit.theta.xcfa.model.XcfaProcedure
  * to [False] instead has no such absorbing-element problem: `Or(real predecessor value, False())`
  * is just the real predecessor value, unchanged.
  *
- * [checkerFactory] supplies whatever "the ordinary, already-existing analysis" (plan §0/§3)
- * actually is - `xcfa-cli`'s real CEGAR checker in production, or a purpose-built fixture in a
- * test - rather than this class hard-coding a call to `xcfa-cli`'s `getCegarChecker` itself (as an
- * earlier version did, through build-order step 8). That kept this whole module free of a
- * compile-time dependency on `xcfa-cli`, which is what let `xcfa-cli` depend on DSS for
- * `--algorithm DSS` without creating a circular project dependency - `xcfa-dss-analysis` already
- * needed `getCegarChecker` from `xcfa-cli` before this change, so `xcfa-cli` needing DSS back would
- * have closed the cycle. See [runWorkerConfig][hu.bme.mit.theta.xcfa.dss.analysis.runWorkerConfig]
- * for the full rationale.
+ * [checkerRoster] supplies whatever "the ordinary, already-existing analysis" (plan §0/§3) actually
+ * is - `xcfa-cli`'s real CEGAR checker in production, or a purpose-built fixture in a test - rather
+ * than this class hard-coding a call to `xcfa-cli`'s `getCegarChecker` itself (as an earlier
+ * version did, through build-order step 8). That kept this whole module free of a compile-time
+ * dependency on `xcfa-cli`, which is what let `xcfa-cli` depend on DSS for `--algorithm DSS`
+ * without creating a circular project dependency - `xcfa-dss-analysis` already needed
+ * `getCegarChecker` from `xcfa-cli` before this change, so `xcfa-cli` needing DSS back would have
+ * closed the cycle. See [runWorkerConfig][hu.bme.mit.theta.xcfa.dss.analysis.runWorkerConfig] for
+ * the full rationale.
+ *
+ * [checkerRoster] can hold more than one checker: [recheck] asks it for one, fresh, every single
+ * time it runs - once for [initialMessages], and again for every [onPostCondition] - rather than
+ * committing to one checker for this block's whole lifetime. Which checker comes back on any given
+ * call is [checkerRoster]'s own business (default: round-robin, so every checker in it gets used
+ * about equally often across the whole run - see
+ * [DssCheckerRoster][hu.bme.mit.theta.xcfa.dss.analysis.DssCheckerRoster]); this class just uses
+ * whatever it gets back as a complete, correct check on its own, same as it always has with a
+ * single injected factory.
+ *
+ * [useGlobalPredicatePool] toggles
+ * [globalAssumePredicatePrecision][hu.bme.mit.theta.xcfa.dss.analysis.globalAssumePredicatePrecision]
+ * (default: on, matching this class's original, only behavior). Off means every [recheck] passes
+ * `null` as the checker's initial precision instead - the checker's own default (empty)
+ * derivation - which reproduces exactly the precision gap the global pool was built to close (see
+ * that function's own class doc): most blocks have no local violation to refute against, so without
+ * either a seeded pool or a local counterexample, predicate-abstraction CEGAR never refines past an
+ * empty precision, and [packPostcondition] can collapse to the trivial `True()` for almost every
+ * such block - which, chained into a downstream block's precondition, can itself manufacture a
+ * spurious violation there. Sound either way (an over-approximated `True()` postcondition never
+ * *hides* a real violation) but meaningfully less precise - an escape hatch for comparing against
+ * that original behavior (or a future benchmark measuring what the pool actually costs to compute),
+ * not something to turn off by default.
  */
 class PredicateBlockBehavior(
   private val wholeProgram: XCFA,
   private val sourceProcedure: XcfaProcedure,
   private val block: Block,
-  private val checkerFactory: (XCFA) -> XcfaChecker,
+  private val checkerRoster: DssCheckerRoster,
+  private val useGlobalPredicatePool: Boolean = true,
 ) : DssBlockBehavior {
 
   private val knownPreconditions = mutableMapOf<String, Expr<BoolType>>()
@@ -101,8 +125,9 @@ class PredicateBlockBehavior(
   private fun recheck(): Collection<DssMessage> {
     val precondition = currentPrecondition()
     val extraction = extractBlockXcfa(sourceProcedure, block, precondition = precondition)
-    val result =
-      runWorkerConfig(extraction.xcfa, checkerFactory, globalAssumePredicatePrecision(wholeProgram))
+    val initialPrecision =
+      if (useGlobalPredicatePool) globalAssumePredicatePrecision(wholeProgram) else null
+    val result = runWorkerConfig(extraction.xcfa, checkerRoster.next(), initialPrecision)
     if (result.isUnsafe) {
       return listOf(DssViolationConditionMessage(block.id))
     }

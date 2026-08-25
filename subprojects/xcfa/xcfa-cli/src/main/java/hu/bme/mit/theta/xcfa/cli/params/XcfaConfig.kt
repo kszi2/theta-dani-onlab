@@ -260,6 +260,37 @@ data class DssConfig(
   var targetBlockCount: Int = 10,
   @Parameter(names = ["--dss-executor"], description = "Which DSS actor-runtime driver to use")
   var executor: DssExecutor = DssExecutor.CONCURRENT,
+  @Parameter(
+    names = ["--dss-global-predicate-pool"],
+    description =
+      "Seed every block's initial precision from the whole program's own assume conditions, not just that block's own edges (default: on). Off reproduces DSS's original precision gap - see doc/DSS-analysis.md.",
+    // JCommander defaults a Boolean @Parameter to arity 0 (bare presence = true, no way to pass an
+    // explicit "false" - fine for every other Boolean flag in this file, which all default false
+    // and only ever need turning *on*). This one defaults true and needs to be turned *off* from
+    // the CLI, so it needs arity 1 explicitly: `--dss-global-predicate-pool false`.
+    arity = 1,
+  )
+  var globalPredicatePool: Boolean = true,
+  @Parameter(
+    names = ["--dss-checker-backends"],
+    description =
+      "Comma-separated list of backends to build DSS's checker-roster factories from; the " +
+        "list's length is the roster size (repeat a name for more than one of a kind, e.g. " +
+        "CEGAR_PRED_CART,CEGAR_PRED_CART,BMC). CEGAR_PRED_CART/CEGAR_PRED_BOOL/CEGAR_PRED_SPLIT " +
+        "are getCegarChecker with the matching Domain, all three still consuming " +
+        "--dss-global-predicate-pool's precision seed same as always; the bounded-family entries " +
+        "(BMC/KIND/IMC/KINDIMC/BOUNDED) are built via getBoundedChecker with the matching " +
+        "--backend preset and do NOT consume that seed (they run on UnitPrec, not XcfaPrec, so " +
+        "there is nothing to seed it into). Every block draws its checker for each recheck from " +
+        "this same shared roster, chosen by --dss-checker-selection - see doc/DSS-analysis.md's " +
+        "DssCheckerRoster section.",
+  )
+  var checkerBackends: List<DssCheckerBackend> = listOf(DssCheckerBackend.CEGAR_PRED_CART),
+  @Parameter(
+    names = ["--dss-checker-selection"],
+    description = "Policy DssCheckerRoster uses to pick a checker factory on each recheck",
+  )
+  var checkerSelection: DssCheckerSelectionMethod = DssCheckerSelectionMethod.ROUND_ROBIN,
 ) : SpecBackendConfig
 
 data class CegarConfig(

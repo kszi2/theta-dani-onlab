@@ -124,6 +124,59 @@ enum class DssExecutor {
   SEQUENTIAL,
 }
 
+/**
+ * Which `DssCheckerSelectionStrategy` (`xcfa-dss-analysis`) a `DssCheckerRoster` uses to pick one
+ * of [DssConfig.checkerBackends]'s checker factories on each recheck - see `doc/DSS-analysis.md`'s
+ * `DssCheckerRoster` section. `ROUND_ROBIN` is the only built-in strategy today; this enum exists
+ * so *which* strategy is used is itself a CLI-exposed, parametrised choice rather than a hardcoded
+ * one - a future strategy (e.g. least-used/weighted) only needs a new case here plus a branch where
+ * `--dss-checker-selection` is translated into a `DssCheckerSelectionStrategy` instance.
+ */
+enum class DssCheckerSelectionMethod {
+  /** `RoundRobinCheckerSelectionStrategy`: cycles the checker list in order, balanced usage. */
+  ROUND_ROBIN
+}
+
+/**
+ * Which backend algorithm one entry of [DssConfig.checkerBackends] builds a DSS block checker
+ * factory with - see `doc/DSS-analysis.md`'s `DssCheckerRoster` section. Restricted to the subset
+ * of [Backend] that produces the `LocationInvariants`/`Trace` proof shape DSS's own `XcfaChecker`
+ * (`xcfa-dss-analysis`) requires: `getSafetyChecker`'s `CEGAR` and bounded-model-checking
+ * (`BMC`/`KIND`/`IMC`/`KINDIMC`/`BOUNDED`) cases share it, so they're offered here; every other
+ * `Backend` (`OC`, `CHC`, `PORTFOLIO`, `IC3`, `MDD`, ...) produces a genuinely incompatible
+ * proof/counterexample/precision type and can't be a DSS block checker without its own dedicated
+ * adapter, which doesn't exist yet.
+ *
+ * The three `CEGAR_*` entries are all still plain `getCegarChecker`, differing only in [Domain] -
+ * DSS's own [DssConfig.globalPredicatePool] seed (`globalAssumePredicatePrecision`, a `PredPrec`)
+ * is exactly the precision shape all three of
+ * [Domain.PRED_CART]/[Domain.PRED_BOOL]/[Domain.PRED_SPLIT] expect, so all three keep consuming it
+ * exactly like the original `CEGAR` option always did. [Domain.EXPL] and the two product domains
+ * ([Domain.EXPL_PRED_SPLIT]/[Domain.EXPL_PRED_STMT]) are deliberately not offered here: their own
+ * precision type is `ExplPrec`/`Prod2Prec`, not `PredPrec`, so handing them the
+ * global-predicate-pool seed as-is would be a genuine type mismatch (not just a missed opportunity,
+ * the way skipping the seed for the bounded-model-checking family below is) - offering them would
+ * need their own `adaptBoundedChecker`-style wrapper that skips the seed, which doesn't exist yet.
+ */
+enum class DssCheckerBackend {
+  /** `getCegarChecker` with `Domain.PRED_CART` - DSS's original, only checker. */
+  CEGAR_PRED_CART,
+  /** `getCegarChecker` with `Domain.PRED_BOOL`. */
+  CEGAR_PRED_BOOL,
+  /** `getCegarChecker` with `Domain.PRED_SPLIT`. */
+  CEGAR_PRED_SPLIT,
+  /** `getBoundedChecker`, `--backend BMC`'s own preset: only the SAT-based bounded check. */
+  BMC,
+  /** `getBoundedChecker`, `--backend KIND`'s own preset: only k-induction. */
+  KIND,
+  /** `getBoundedChecker`, `--backend IMC`'s own preset: only interpolation-based checking. */
+  IMC,
+  /** `getBoundedChecker`, `--backend KINDIMC`'s own preset: k-induction and interpolation. */
+  KINDIMC,
+  /** `getBoundedChecker`, `--backend BOUNDED`'s own preset: every bounded technique enabled. */
+  BOUNDED,
+}
+
 enum class POR(
   val getLts:
     (XCFA, MutableMap<VarDecl<*>, MutableSet<ExprState>>) -> LTS<

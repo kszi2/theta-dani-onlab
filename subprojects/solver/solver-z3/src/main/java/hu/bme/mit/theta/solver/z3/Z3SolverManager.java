@@ -19,8 +19,8 @@ import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
 
 import hu.bme.mit.theta.solver.*;
-import java.util.HashSet;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 public final class Z3SolverManager extends SolverManager {
 
@@ -28,7 +28,11 @@ public final class Z3SolverManager extends SolverManager {
     private static final String NAME_DEPRECATED = "Z3:4.13";
 
     private boolean closed = false;
-    private final Set<SolverBase> instantiatedSolvers = new HashSet<>();
+    // See the identical note in solver-z3-legacy's Z3SolverManager: a plain HashSet mutated with no
+    // synchronization from several threads at once (one per DSS block actor, each building its own
+    // checker concurrently) is undefined behavior, and was hit on every single checker
+    // construction.
+    private final Set<SolverBase> instantiatedSolvers = ConcurrentHashMap.newKeySet();
 
     private Z3SolverManager() {}
 

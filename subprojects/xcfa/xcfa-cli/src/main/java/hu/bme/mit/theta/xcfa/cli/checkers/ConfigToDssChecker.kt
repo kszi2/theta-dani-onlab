@@ -16,22 +16,39 @@
 package hu.bme.mit.theta.xcfa.cli.checkers
 
 import hu.bme.mit.theta.analysis.EmptyCex
+import hu.bme.mit.theta.analysis.Trace
 import hu.bme.mit.theta.analysis.algorithm.EmptyProof
 import hu.bme.mit.theta.analysis.algorithm.SafetyChecker
 import hu.bme.mit.theta.analysis.algorithm.SafetyResult
+import hu.bme.mit.theta.analysis.expl.ExplState
+import hu.bme.mit.theta.analysis.ptr.PtrState
+import hu.bme.mit.theta.analysis.unit.UnitPrec
 import hu.bme.mit.theta.common.logging.Logger
 import hu.bme.mit.theta.frontend.ParseContext
 import hu.bme.mit.theta.graphsolver.patterns.constraints.MCM
+import hu.bme.mit.theta.xcfa.analysis.XcfaAction
 import hu.bme.mit.theta.xcfa.analysis.XcfaPrec
+import hu.bme.mit.theta.xcfa.analysis.XcfaState
+import hu.bme.mit.theta.xcfa.analysis.proof.LocationInvariants
+import hu.bme.mit.theta.xcfa.cli.params.Backend
+import hu.bme.mit.theta.xcfa.cli.params.Domain
+import hu.bme.mit.theta.xcfa.cli.params.DssCheckerBackend
+import hu.bme.mit.theta.xcfa.cli.params.DssCheckerSelectionMethod
 import hu.bme.mit.theta.xcfa.cli.params.DssConfig
 import hu.bme.mit.theta.xcfa.cli.params.DssDecomposition
 import hu.bme.mit.theta.xcfa.cli.params.DssExecutor
+import hu.bme.mit.theta.xcfa.cli.params.SpecBackendConfig
+import hu.bme.mit.theta.xcfa.cli.params.SpecFrontendConfig
 import hu.bme.mit.theta.xcfa.cli.params.XcfaConfig
 import hu.bme.mit.theta.xcfa.cli.params.defaultPredicateCegarConfig
 import hu.bme.mit.theta.xcfa.dss.actor.DssResult
 import hu.bme.mit.theta.xcfa.dss.actor.PredicateBlockBehavior
 import hu.bme.mit.theta.xcfa.dss.actor.runDssActors
 import hu.bme.mit.theta.xcfa.dss.actor.runDssActorsSequentially
+import hu.bme.mit.theta.xcfa.dss.analysis.CheckerFactory
+import hu.bme.mit.theta.xcfa.dss.analysis.DssCheckerRoster
+import hu.bme.mit.theta.xcfa.dss.analysis.DssCheckerSelectionStrategy
+import hu.bme.mit.theta.xcfa.dss.analysis.RoundRobinCheckerSelectionStrategy
 import hu.bme.mit.theta.xcfa.dss.analysis.XcfaChecker
 import hu.bme.mit.theta.xcfa.dss.decomposition.Block
 import hu.bme.mit.theta.xcfa.dss.decomposition.BlockGraph
@@ -50,12 +67,31 @@ import hu.bme.mit.theta.xcfa.model.XCFA
  * decomposition happens per-procedure, not yet across procedure boundaries); a multi-procedure
  * input fails fast with a clear message rather than silently checking only one procedure.
  *
- * The [checkerFactory] every block's [PredicateBlockBehavior] forwards to is always
- * [getCegarChecker] with [defaultPredicateCegarConfig] - the same "thin orchestration layer" every
- * DSS test in `xcfa-dss-actor` builds by hand, just assembled here instead. There is currently no
- * `--dss-worker-config` flag to substitute a different worker configuration (see the plan's open
- * questions on why this is more involved than it first looks); every DSS run uses the one default
- * config.
+ * [DssConfig.checkerBackends] lists which backend builds each of [DssCheckerRoster]'s checker
+ * factories, one entry per roster slot (repeat a name for more than one of a kind) -
+ * `--dss-checker-backends CEGAR_PRED_CART` (the default, a one-element list) reproduces the
+ * original byte-for-byte single-checker behavior. The three `CEGAR_*` entries
+ * ([DssCheckerBackend.CEGAR_PRED_CART]/[CEGAR_PRED_BOOL][DssCheckerBackend.CEGAR_PRED_BOOL]/
+ * [CEGAR_PRED_SPLIT][DssCheckerBackend.CEGAR_PRED_SPLIT]) are all [getCegarChecker] with
+ * [defaultPredicateCegarConfig] - the same "thin orchestration layer" every DSS test in
+ * `xcfa-dss-actor` builds by hand, just assembled here instead - differing only in which [Domain]
+ * gets passed through; all three still consume `--dss-global-predicate-pool`'s seed exactly like
+ * the original, sole `CEGAR` option always did (see [DssCheckerBackend]'s own doc for why only
+ * these three, not [Domain.EXPL]/the product domains). The bounded-model-checking family
+ * (`BMC`/`KIND`/`IMC`/`KINDIMC`/`BOUNDED` - see [DssCheckerBackend]'s own doc) is built via
+ * [getBoundedChecker] with the matching `--backend` preset ([defaultBoundedConfigFor] reuses
+ * `BackendConfig.createSpecConfig`'s own dispatch, so it can't drift from what that flag actually
+ * means) and [adaptBoundedChecker]ed into the roster's own [XcfaChecker] shape - see that
+ * function's own doc for why the adaptation silently drops `--dss-global-predicate-pool`'s
+ * precision seed for those entries specifically (they run on [UnitPrec], not [XcfaPrec], so there
+ * is nothing to seed it into). There is currently no `--dss-worker-config` flag to substitute a
+ * genuinely *different* worker configuration beyond the domain/backend choice itself (e.g. a
+ * non-default solver or search strategy) - see the plan's open questions on why this is more
+ * involved than it first looks. [DssConfig.checkerSelection] picks which
+ * [DssCheckerSelectionStrategy] the roster uses to choose among its factories on each recheck
+ * (`ROUND_ROBIN` today, matching [DssCheckerRoster]'s own default). `--dss-global-predicate-pool`
+ * (default on) is otherwise pass-through to every block's own [PredicateBlockBehavior] - see that
+ * class's own doc for what turning it off actually changes.
  *
  * DSS produces no concrete counterexample trace ([EmptyCex]) and no invariant proof beyond a
  * trivial one ([EmptyProof]) for either verdict - matching the paper's own stated "Verification
@@ -108,11 +144,62 @@ fun getDssChecker(
         )
     }
 
-  val checkerFactory: (XCFA) -> XcfaChecker = { blockXcfa ->
-    getCegarChecker(blockXcfa, mcm, parseContext, defaultPredicateCegarConfig(), logger)
+  require(dssConfig.checkerBackends.isNotEmpty()) {
+    "--dss-checker-backends must list at least one backend"
   }
+  // One independent factory per dssConfig.checkerBackends entry - .map already calls its lambda
+  // fresh for every element, so the roster holds distinct instances (matters for DssCheckerRoster's
+  // index-based bookkeeping, not just its size), not shared references to one closure.
+  // --dss-checker-backends CEGAR_PRED_CART (the default, a one-element list) is therefore still
+  // byte-for-byte the original single-checker behavior.
+  val checkers: List<CheckerFactory> =
+    dssConfig.checkerBackends.map { backend ->
+      when (backend) {
+        DssCheckerBackend.CEGAR_PRED_CART,
+        DssCheckerBackend.CEGAR_PRED_BOOL,
+        DssCheckerBackend.CEGAR_PRED_SPLIT -> { blockXcfa: XCFA ->
+            getCegarChecker(
+              blockXcfa,
+              mcm,
+              parseContext,
+              defaultPredicateCegarConfig(backend.toCegarDomain()),
+              logger,
+            )
+          }
+        DssCheckerBackend.BMC,
+        DssCheckerBackend.KIND,
+        DssCheckerBackend.IMC,
+        DssCheckerBackend.KINDIMC,
+        DssCheckerBackend.BOUNDED -> { blockXcfa: XCFA ->
+            adaptBoundedChecker(
+              getBoundedChecker(
+                blockXcfa,
+                parseContext,
+                defaultBoundedConfigFor(backend.toBoundedBackend()),
+                logger,
+              )
+            )
+          }
+      }
+    }
+  val selectionStrategy: DssCheckerSelectionStrategy =
+    when (dssConfig.checkerSelection) {
+      DssCheckerSelectionMethod.ROUND_ROBIN -> RoundRobinCheckerSelectionStrategy()
+    }
+  // Built once, here - not inside behaviorFor - so it's the one shared instance every block's
+  // PredicateBlockBehavior gets, per DssCheckerRoster's own contract (a fresh roster per block
+  // would
+  // silently give each block its own independent selection-strategy state instead of one shared
+  // across the whole run).
+  val checkerRoster = DssCheckerRoster(checkers, selectionStrategy)
   val behaviorFor = { block: Block ->
-    PredicateBlockBehavior(xcfa, procedure, block, checkerFactory)
+    PredicateBlockBehavior(
+      xcfa,
+      procedure,
+      block,
+      checkerRoster,
+      useGlobalPredicatePool = dssConfig.globalPredicatePool,
+    )
   }
 
   val dssResult =
@@ -125,4 +212,78 @@ fun getDssChecker(
     DssResult.SAFE -> SafetyResult.safe(EmptyProof.getInstance())
     DssResult.UNSAFE -> SafetyResult.unsafe(EmptyCex.getInstance(), EmptyProof.getInstance())
   }
+}
+
+/**
+ * Builds a default [XcfaConfig] for one of the bounded-model-checking family's `--backend` presets
+ * ([Backend.BMC]/[Backend.KIND]/[Backend.IMC]/[Backend.KINDIMC]/[Backend.BOUNDED]) - reuses
+ * `BackendConfig.createSpecConfig`'s own dispatch, the exact same switch a real `--backend BMC`
+ * (etc.) invocation goes through, so this can never drift from what that flag actually means. Not
+ * meant for [Backend.CEGAR] - see [defaultPredicateCegarConfig] for that one instead.
+ */
+private fun defaultBoundedConfigFor(backend: Backend): XcfaConfig<*, *> {
+  val config = XcfaConfig<SpecFrontendConfig, SpecBackendConfig>()
+  config.backendConfig.backend = backend
+  config.backendConfig.createSpecConfig()
+  return config
+}
+
+/**
+ * [DssCheckerBackend]'s own bounded-model-checking-family entries, mapped onto the real [Backend]
+ * value [defaultBoundedConfigFor]/[getBoundedChecker] need - the three `CEGAR_*` entries have no
+ * bounded-family shape and are handled separately in [getDssChecker] (see [toCegarDomain]), never
+ * routed through here.
+ */
+private fun DssCheckerBackend.toBoundedBackend(): Backend =
+  when (this) {
+    DssCheckerBackend.BMC -> Backend.BMC
+    DssCheckerBackend.KIND -> Backend.KIND
+    DssCheckerBackend.IMC -> Backend.IMC
+    DssCheckerBackend.KINDIMC -> Backend.KINDIMC
+    DssCheckerBackend.BOUNDED -> Backend.BOUNDED
+    DssCheckerBackend.CEGAR_PRED_CART,
+    DssCheckerBackend.CEGAR_PRED_BOOL,
+    DssCheckerBackend.CEGAR_PRED_SPLIT ->
+      throw IllegalArgumentException("$this has no bounded-family Backend")
+  }
+
+/**
+ * [DssCheckerBackend]'s own three CEGAR entries, mapped onto the [Domain]
+ * [defaultPredicateCegarConfig] needs - the bounded-model-checking-family entries have no [Domain]
+ * (they aren't CEGAR at all) and are handled separately in [getDssChecker] (see
+ * [toBoundedBackend]), never routed through here.
+ */
+private fun DssCheckerBackend.toCegarDomain(): Domain =
+  when (this) {
+    DssCheckerBackend.CEGAR_PRED_CART -> Domain.PRED_CART
+    DssCheckerBackend.CEGAR_PRED_BOOL -> Domain.PRED_BOOL
+    DssCheckerBackend.CEGAR_PRED_SPLIT -> Domain.PRED_SPLIT
+    DssCheckerBackend.BMC,
+    DssCheckerBackend.KIND,
+    DssCheckerBackend.IMC,
+    DssCheckerBackend.KINDIMC,
+    DssCheckerBackend.BOUNDED ->
+      throw IllegalArgumentException("$this is not a CEGAR entry, has no Domain")
+  }
+
+/**
+ * Adapts a [UnitPrec]-based checker ([getBoundedChecker]'s own return shape - the bounded-model-
+ * checking family's own precision type, unrelated to [XcfaPrec]) into the roster's own
+ * [XcfaChecker] shape. The incoming [XcfaPrec] initial precision (DSS's
+ * `--dss-global-predicate-pool` seed, when [PredicateBlockBehavior] passes one) is discarded, not
+ * translated - [UnitPrec] carries no information to translate it *into*, so a bounded-family roster
+ * entry always runs exactly as its own [defaultBoundedConfigFor] preset would standalone, silently
+ * skipping that seed (see [DssConfig.checkerBackends]'s own doc).
+ *
+ * The cast below is unchecked but safe: generics are erased at runtime, so a real
+ * `Trace<XcfaState<PtrState<ExplState>>, XcfaAction>` value already *is* a valid value to read as
+ * `Trace<XcfaState<PtrState<*>>, XcfaAction>` - nothing here writes into it under the assumed type,
+ * only re-exposes what [getBoundedChecker] already produced under a wider read-only view.
+ */
+@Suppress("UNCHECKED_CAST")
+private fun adaptBoundedChecker(
+  inner:
+    SafetyChecker<LocationInvariants, Trace<XcfaState<PtrState<ExplState>>, XcfaAction>, UnitPrec>
+): XcfaChecker = SafetyChecker { _ ->
+  inner.check() as SafetyResult<LocationInvariants, Trace<XcfaState<PtrState<*>>, XcfaAction>>
 }
