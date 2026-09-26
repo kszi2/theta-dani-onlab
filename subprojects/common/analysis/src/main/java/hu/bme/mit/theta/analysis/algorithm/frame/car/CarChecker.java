@@ -201,7 +201,7 @@ public class CarChecker<S extends ExprState, A extends ExprAction>
                                     node,
                                     optimizations.isCoverOpt(),
                                     solver);
-                    currentlyVisited.put(counterExampleNode, false);
+                    registerNode(counterExampleNode);
 
                     var faultyNode =
                             tryBlock(
@@ -225,7 +225,12 @@ public class CarChecker<S extends ExprState, A extends ExprAction>
 
         var deleteList = new ArrayList<Node>();
         for (Node currentNode : currentlyVisited.keySet()) {
-            if (currentNode.getParent() != null && currentNode.getParent().equals(node)) {
+            // covered nodes are not in the map, so look through them to the registered ancestor
+            Node parent = currentNode.getParent();
+            while (parent != null && parent != node && parent.isCovered()) {
+                parent = parent.getParent();
+            }
+            if (parent == node) {
                 deleteList.add(currentNode);
             }
         }
@@ -323,7 +328,7 @@ public class CarChecker<S extends ExprState, A extends ExprAction>
                                 proofObligation.getNode(),
                                 optimizations.isCoverOpt(),
                                 solver);
-                currentlyVisited.put(newNode, false);
+                registerNode(newNode);
                 proofObligationsQueue.add(
                         new ProofObligationCar(newNode, proofObligation.getTime() - 1));
 
@@ -396,6 +401,17 @@ public class CarChecker<S extends ExprState, A extends ExprAction>
             }
         } else {
             return null;
+        }
+    }
+
+    /**
+     * Adds a new node to the set the main loop explores. A covered node is left out: its cube
+     * lies in one of its ancestors, whose predecessors are explored anyway. It is still used as
+     * a proof obligation and as a trace element, which is what keeps the search sound.
+     */
+    private void registerNode(Node node) {
+        if (!node.isCovered()) {
+            currentlyVisited.put(node, false);
         }
     }
 

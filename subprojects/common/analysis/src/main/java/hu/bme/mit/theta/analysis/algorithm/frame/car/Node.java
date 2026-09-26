@@ -22,7 +22,6 @@ import static hu.bme.mit.theta.core.type.booltype.SmartBoolExprs.And;
 import hu.bme.mit.theta.common.collection.CollectionUtil;
 import hu.bme.mit.theta.core.type.Expr;
 import hu.bme.mit.theta.core.type.booltype.BoolType;
-import hu.bme.mit.theta.core.type.booltype.FalseExpr;
 import hu.bme.mit.theta.core.type.booltype.SmartBoolExprs;
 import hu.bme.mit.theta.core.utils.PathUtils;
 import hu.bme.mit.theta.solver.UCSolver;
@@ -91,11 +90,16 @@ public class Node {
             covered = false;
         }
 
-        if (covered) {
-            exprs.add(FalseExpr.getInstance());
-        } else {
-            exprs.add(expr);
-        }
+        // A covered node keeps its real cube. Replacing it with false made its proof obligation
+        // trivially unsat: the blocked cube was false, the learned clause was true (rejected),
+        // and the same predecessor was found again forever. Covering only means the node is not
+        // explored on its own in the main loop, since its covering ancestor already is.
+        exprs.add(expr);
         this.parent = parent;
+    }
+
+    /** The node's cube lies in a strict ancestor above its parent, i.e. it closes a cycle. */
+    public boolean isCovered() {
+        return covered;
     }
 }
