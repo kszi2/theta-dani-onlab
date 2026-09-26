@@ -160,12 +160,21 @@ public abstract class FrameBasedChecker<O extends BaseOptimizations>
         return new ProofObligation(Cube.of(interSection), currentFrameNumber);
     }
 
+    /**
+     * Whether the fixpoint check compares frames under the current model's property rather than
+     * the one each frame was built with; only differs for frames kept across a model change.
+     */
+    protected boolean fixpointUsesCurrentProp() {
+        return false;
+    }
+
     protected int propagateForward() {
+        final boolean currentProp = fixpointUsesCurrentProp();
         Predicate<Frame> equalityCheck;
         if(optimizations.isMonotonoousFrames()) {
-            equalityCheck = Frame::equalsParent;
+            equalityCheck = frame -> frame.equalsParent(currentProp);
         } else {
-            equalityCheck = Frame::equalsAllParents;
+            equalityCheck = frame -> frame.equalsAllParents(currentProp);
         }
 
         frames.add(

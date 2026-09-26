@@ -80,6 +80,10 @@ public class Frame {
     }
 
     public void addFrameToSolver(VarIndexing indexing) {
+        addFrameToSolver(indexing, originalProp);
+    }
+
+    private void addFrameToSolver(VarIndexing indexing, Expr<BoolType> prop) {
         if (parent == null) {
             solver.track(PathUtils.unfold(monolithicExpr.getInitExpr(), indexing));
             return;
@@ -88,11 +92,15 @@ public class Frame {
             solver.track(PathUtils.unfold(clause.toExpr(), indexing));
         }
         if (optimizations.isPropertyOpt()) {
-            solver.track(PathUtils.unfold(originalProp, indexing));
+            solver.track(PathUtils.unfold(prop, indexing));
         }
     }
 
     public void addNegatedFrameToSolver(VarIndexing indexing) {
+        addNegatedFrameToSolver(indexing, originalProp);
+    }
+
+    private void addNegatedFrameToSolver(VarIndexing indexing, Expr<BoolType> prop) {
         if (parent == null) {
             solver.track(PathUtils.unfold(Not(monolithicExpr.getInitExpr()), indexing));
             return;
@@ -102,7 +110,7 @@ public class Frame {
             exprs.add(clause.negate().toExpr());
         }
         if (optimizations.isPropertyOpt()) {
-            exprs.add(Not(originalProp));
+            exprs.add(Not(prop));
         }
         solver.track(PathUtils.unfold(Or(exprs), indexing));
     }
@@ -171,31 +179,61 @@ public class Frame {
         }
     }
 
+    /**
+     * The property a fixpoint check conjoins this frame with. A frame keeps the property of the
+     * model it was built with; after a CEGAR refinement that one lacks the new predicates'
+     * definitions. Queries with the transition relation don't notice (it asserts the new
+     * definitions), but a fixpoint check has no transition relation, so there states that
+     * violate a new definition satisfy an old frame's negation, and old and new frames never
+     * compare equal.
+     */
+    private Expr<BoolType> fixpointProp(boolean currentProp) {
+        return currentProp ? monolithicExpr.getPropExpr() : originalProp;
+    }
+
     public boolean equalsAllParents() {
+        return equalsAllParents(false);
+    }
+
+    /**
+     * @param currentProp compare every frame under the current model's property instead of the
+     *     one it was built with (see {@link #fixpointProp})
+     */
+    public boolean equalsAllParents(boolean currentProp) {
         if (this.parent == null) {
             return false;
         }
         try (var wpp = new WithPushPop(solver)) {
             var currentParent = this.parent;
             while (currentParent != null) {
-                currentParent.addNegatedFrameToSolver(VarIndexingFactory.indexing(0));
+                currentParent.addNegatedFrameToSolver(
+                        VarIndexingFactory.indexing(0), currentParent.fixpointProp(currentProp));
                 currentParent = currentParent.parent;
             }
 
-            addFrameToSolver(VarIndexingFactory.indexing(0));
+            addFrameToSolver(VarIndexingFactory.indexing(0), fixpointProp(currentProp));
 
             return solver.check().isUnsat();
         }
     }
 
     public boolean equalsParent() {
+        return equalsParent(false);
+    }
+
+    /**
+     * @param currentProp compare both frames under the current model's property instead of the
+     *     one each was built with (see {@link #fixpointProp})
+     */
+    public boolean equalsParent(boolean currentProp) {
         if (this.parent == null) {
             return false;
         }
         try (var wpp = new WithPushPop(solver)) {
 
-            parent.addNegatedFrameToSolver(VarIndexingFactory.indexing(0));
-            addFrameToSolver(VarIndexingFactory.indexing(0));
+            parent.addNegatedFrameToSolver(
+                    VarIndexingFactory.indexing(0), parent.fixpointProp(currentProp));
+            addFrameToSolver(VarIndexingFactory.indexing(0), fixpointProp(currentProp));
 
             return solver.check().isUnsat();
         }

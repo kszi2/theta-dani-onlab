@@ -448,6 +448,15 @@ public class StsCli {
     Boolean carStoreNodes = true;
 
     @Parameter(
+            names = {"--car-refresh-frame-prop"},
+            description =
+                    "CARCEGAR: the fixpoint check compares frames kept across a refinement"
+                            + " (--car-store-frames) under the refined property instead of the one"
+                            + " each was built with",
+            arity = 1)
+    Boolean carRefreshFrameProp = false;
+
+    @Parameter(
             names = {"--car-trace-checker"},
             description = "CARCEGAR: interpolating trace checker used for spuriousness checking")
     TraceCheckerType carTraceCheckerType = TraceCheckerType.FW_BIN_ITP;
@@ -580,7 +589,8 @@ public class StsCli {
                 carCoverOpt,
                 carMonotonousFrames,
                 carStoreFrames,
-                carStoreNodes);
+                carStoreNodes,
+                carRefreshFrameProp);
     }
 
     private void registerSolverManagers() throws IOException {

@@ -23,6 +23,7 @@ public class CarOptimizations extends BaseOptimizations {
     private final boolean coverOpt;
     private final boolean storeFrames;
     private final boolean storeNodes;
+    private final boolean refreshFrameProp;
 
     public CarOptimizations(
             boolean unSatOpt,
@@ -36,6 +37,34 @@ public class CarOptimizations extends BaseOptimizations {
             boolean monotonoousFrames,
             boolean storeFrames,
             boolean storeNodes) {
+        this(
+                unSatOpt,
+                notBOpt,
+                propagateOpt,
+                propertyOpt,
+                filterOpt,
+                generalizeOpt,
+                unsatPropagateOpt,
+                coverOpt,
+                monotonoousFrames,
+                storeFrames,
+                storeNodes,
+                false);
+    }
+
+    public CarOptimizations(
+            boolean unSatOpt,
+            boolean notBOpt,
+            boolean propagateOpt,
+            boolean propertyOpt,
+            boolean filterOpt,
+            boolean generalizeOpt,
+            boolean unsatPropagateOpt,
+            boolean coverOpt,
+            boolean monotonoousFrames,
+            boolean storeFrames,
+            boolean storeNodes,
+            boolean refreshFrameProp) {
         super(
                 unSatOpt,
                 notBOpt,
@@ -48,6 +77,7 @@ public class CarOptimizations extends BaseOptimizations {
         this.coverOpt = coverOpt;
         this.storeFrames = storeFrames;
         this.storeNodes = storeNodes;
+        this.refreshFrameProp = refreshFrameProp;
     }
 
     public boolean isCoverOpt() {
@@ -70,5 +100,16 @@ public class CarOptimizations extends BaseOptimizations {
      */
     public boolean isStoreNodes() {
         return storeNodes;
+    }
+
+    /**
+     * Whether the fixpoint check compares frames kept across a CARCEGAR refinement (see {@link
+     * #isStoreFrames()}) under the refined model's property. When {@code false}, each frame is
+     * compared under the property it was built with, and old frames never compare equal to new
+     * ones. Other queries keep each frame's own property either way: with the transition relation
+     * the two are equivalent, and swapping them only changes which models the solver returns.
+     */
+    public boolean isRefreshFrameProp() {
+        return refreshFrameProp;
     }
 }

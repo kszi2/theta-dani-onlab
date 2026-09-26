@@ -49,6 +49,7 @@ import java.io.IOException;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -58,7 +59,7 @@ public class StsCarCegarTest {
     public boolean isSafe;
 
     public static Collection<Object[]> data() {
-        return Arrays.asList(
+        final List<Object[]> models = Arrays.asList(
                 new Object[][] {
                     {"src/test/resources/hw1_false.aag", false},
                     {"src/test/resources/hw2_true.aag", true},
@@ -75,11 +76,20 @@ public class StsCarCegarTest {
                     {"src/test/resources/simple2.system", true},
                     {"src/test/resources/simple3.system", false},
                 });
+        // every model with and without --car-refresh-frame-prop
+        return models.stream()
+                .flatMap(
+                        m ->
+                                Stream.of(
+                                        new Object[] {m[0], m[1], false},
+                                        new Object[] {m[0], m[1], true}))
+                .toList();
     }
 
     @MethodSource("data")
-    @ParameterizedTest(name = "{index}: {0}, {1}")
-    public void testIC3(String filePath, boolean isSafe) throws IOException {
+    @ParameterizedTest(name = "{index}: {0}, {1}, refresh frame prop: {2}")
+    public void testIC3(String filePath, boolean isSafe, boolean refreshFrameProp)
+            throws IOException {
 
         initStsIc3Test(filePath, isSafe);
 
@@ -106,7 +116,7 @@ public class StsCarCegarTest {
                                                 Z3LegacySolverFactory.getInstance()),
                                         new CarOptimizations(
                                                 true, true, true, true, true, true, true, true,
-                                                false, true, true),
+                                                false, true, true, refreshFrameProp),
                                         logger),
                         List.of(),
                         List.of(),

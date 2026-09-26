@@ -41,7 +41,6 @@ import hu.bme.mit.theta.analysis.expr.refinement.ItpRefutation;
 import hu.bme.mit.theta.analysis.pred.PredState;
 import hu.bme.mit.theta.analysis.unit.UnitPrec;
 
-import hu.bme.mit.theta.common.collection.CollectionUtil;
 import hu.bme.mit.theta.common.logging.Logger;
 import hu.bme.mit.theta.core.model.MutableValuation;
 import hu.bme.mit.theta.core.model.Valuation;
@@ -62,6 +61,11 @@ public class CarChecker<S extends ExprState, A extends ExprAction>
         for(var f : frames){
             f.setMonolithicExpr(monolithicExpr);
         }
+    }
+
+    @Override
+    protected boolean fixpointUsesCurrentProp() {
+        return optimizations.isRefreshFrameProp();
     }
 
     private final Map<Node, Boolean> currentlyVisited;
@@ -112,7 +116,10 @@ public class CarChecker<S extends ExprState, A extends ExprAction>
                         null,
                         optimizations.isCoverOpt(),
                         solver);
-        currentlyVisited = CollectionUtil.createMap();
+        // insertion order, not CollectionUtil's configurable factory: the main loop explores the
+        // first unchecked node, and Node has identity hashing, so a hash map would make the search
+        // order (and borderline results) differ between runs
+        currentlyVisited = new LinkedHashMap<>();
     }
 
     private void resetFrames() {
@@ -187,7 +194,11 @@ public class CarChecker<S extends ExprState, A extends ExprAction>
                 noNodeIsVisited();
                 var propagateResult = propagateForward();
                 if (propagateResult > 0) {
-
+                    logger.write(
+                            Logger.Level.INFO,
+                            "CarChecker: fixpoint at frame %d of %d%n",
+                            propagateResult,
+                            frames.size() - 1);
                     return SafetyResult.safe(
                             PredState.of(frames.get(propagateResult).getExpression())); //todo, maybe add prop too?
                 }
