@@ -28,6 +28,8 @@ import hu.bme.mit.theta.analysis.expr.ExprAction;
 import hu.bme.mit.theta.analysis.expr.refinement.ExprTraceChecker;
 import hu.bme.mit.theta.analysis.expr.refinement.ExprTraceStatus;
 import hu.bme.mit.theta.analysis.expr.refinement.ItpRefutation;
+import hu.bme.mit.theta.analysis.pred.ExprSplitters;
+import hu.bme.mit.theta.analysis.pred.ExprSplitters.ExprSplitter;
 import hu.bme.mit.theta.analysis.pred.PredPrec;
 import hu.bme.mit.theta.analysis.pred.PredState;
 import hu.bme.mit.theta.analysis.unit.UnitPrec;
@@ -44,6 +46,7 @@ public class CarCegarChecker
     private final CarOptimizations optimizations;
     private final Logger logger;
     private final Function1<MonolithicExpr, ExprTraceChecker<ItpRefutation>> traceCheckerFactory;
+    private final ExprSplitter predSplitter;
 
     public CarCegarChecker(
             MonolithicExpr monolithicExpr,
@@ -51,11 +54,28 @@ public class CarCegarChecker
             Function1<MonolithicExpr, ExprTraceChecker<ItpRefutation>> traceCheckerFactory,
             CarOptimizations optimizations,
             Logger logger) {
+        this(
+                monolithicExpr,
+                solverFactory,
+                traceCheckerFactory,
+                optimizations,
+                ExprSplitters.whole(),
+                logger);
+    }
+
+    public CarCegarChecker(
+            MonolithicExpr monolithicExpr,
+            SolverFactory solverFactory,
+            Function1<MonolithicExpr, ExprTraceChecker<ItpRefutation>> traceCheckerFactory,
+            CarOptimizations optimizations,
+            ExprSplitter predSplitter,
+            Logger logger) {
         this.monolithicExpr = monolithicExpr;
         this.solverFactory = solverFactory;
         this.optimizations = optimizations;
         this.logger = logger;
         this.traceCheckerFactory = traceCheckerFactory;
+        this.predSplitter = predSplitter;
     }
 
     @Override
@@ -90,6 +110,7 @@ public class CarCegarChecker
                     // only one, a sequence refutation can have several)
                     final var newPreds =
                             ref.stream()
+                                    .flatMap(itp -> predSplitter.apply(itp).stream())
                                     .filter(itp -> !itp.equals(True()) && !itp.equals(False()))
                                     .collect(Collectors.toSet());
                     final int predCountBefore = helper.currentPrec.getPreds().size();

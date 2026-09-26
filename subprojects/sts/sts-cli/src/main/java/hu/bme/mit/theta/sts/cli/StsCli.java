@@ -232,6 +232,7 @@ public class StsCli {
                                 stsCli.carTraceCheckerType.create(
                                         Z3LegacySolverFactory.getInstance()),
                                 stsCli.getCarOptimizations(),
+                                stsCli.predSplit.splitter,
                                 logger));
             }
         },
