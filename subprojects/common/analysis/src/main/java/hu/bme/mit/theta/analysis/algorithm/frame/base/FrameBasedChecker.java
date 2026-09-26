@@ -183,8 +183,7 @@ public abstract class FrameBasedChecker<O extends BaseOptimizations>
                     try (var wpp = new WithPushPop(solver)) {
 
                         frames.get(j).addFrameToSolver(VarIndexingFactory.indexing(0));
-                        getConjuncts(monolithicExpr.getTransExpr())
-                                .forEach(ex -> solver.track(PathUtils.unfold(ex, 0)));
+                        TransitionRelation.addToSolver(solver, monolithicExpr);
                         Cube blockedCube = clause.negate();
                         blockedCube
                                 .getLiterals()
@@ -250,8 +249,7 @@ public abstract class FrameBasedChecker<O extends BaseOptimizations>
                         for (Expr<BoolType> solverExpr : minimalCube.getLiterals()) {
                             solver.track(PathUtils.unfold(solverExpr, 0));
                         }
-                        getConjuncts(monolithicExpr.getTransExpr())
-                                .forEach(ex -> solver.track(PathUtils.unfold(ex, 0)));
+                        TransitionRelation.addToSolver(solver, monolithicExpr);
                         minimalCube
                                 .negate()
                                 .getLiterals()
@@ -300,8 +298,7 @@ public abstract class FrameBasedChecker<O extends BaseOptimizations>
 
             try (var wpp2 = new WithPushPop(solver)) {
                 solver.track(PathUtils.unfold(filteredModel.toExpr(), 0));
-                getConjuncts(monolithicExpr.getTransExpr())
-                        .forEach(ex -> solver.track(PathUtils.unfold(ex, 0)));
+                TransitionRelation.addToSolver(solver, monolithicExpr);
                 cube.getLiterals()
                         .forEach(
                                 ex ->

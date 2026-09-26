@@ -16,7 +16,6 @@
 package hu.bme.mit.theta.analysis.algorithm.frame.base;
 
 import static hu.bme.mit.theta.core.type.booltype.SmartBoolExprs.*;
-import static hu.bme.mit.theta.core.utils.ExprUtils.getConjuncts;
 
 import hu.bme.mit.theta.analysis.algorithm.bounded.MonolithicExpr;
 import hu.bme.mit.theta.common.logging.Logger;
@@ -150,8 +149,7 @@ public class Frame {
     public Valuation checkIfTargetIsReachableValuation(Expr<BoolType> target) {
         try (var wpp = new WithPushPop(solver)) {
             addFrameToSolver(VarIndexingFactory.indexing(0));
-            getConjuncts(monolithicExpr.getTransExpr())
-                    .forEach(ex -> solver.track(PathUtils.unfold(ex, 0)));
+            TransitionRelation.addToSolver(solver, monolithicExpr);
             solver.track(PathUtils.unfold(target, monolithicExpr.getTransOffsetIndex()));
             if (solver.check().isSat()) {
                 return solver.getModel();

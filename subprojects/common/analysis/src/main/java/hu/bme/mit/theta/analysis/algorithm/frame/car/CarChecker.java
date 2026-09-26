@@ -30,6 +30,7 @@ import hu.bme.mit.theta.analysis.algorithm.bounded.MonolithicExprKt;
 import hu.bme.mit.theta.analysis.algorithm.frame.base.Cube;
 import hu.bme.mit.theta.analysis.algorithm.frame.base.Frame;
 import hu.bme.mit.theta.analysis.algorithm.frame.base.FrameBasedChecker;
+import hu.bme.mit.theta.analysis.algorithm.frame.base.TransitionRelation;
 import hu.bme.mit.theta.analysis.expl.ExplState;
 import hu.bme.mit.theta.analysis.expr.ExprAction;
 import hu.bme.mit.theta.analysis.expr.ExprState;
@@ -271,8 +272,7 @@ public class CarChecker<S extends ExprState, A extends ExprAction>
                             PathUtils.unfold(Not(And(proofObligation.getNode().getExprs())), 0));
                 }
 
-                getConjuncts(monolithicExpr.getTransExpr())
-                        .forEach(ex -> solver.track(PathUtils.unfold(ex, 0)));
+                TransitionRelation.addToSolver(solver, monolithicExpr);
 
                 proofObligation
                         .getNode()
@@ -358,9 +358,7 @@ public class CarChecker<S extends ExprState, A extends ExprAction>
                 solver.track(
                         PathUtils.unfold(
                                 monolithicExpr.getInitExpr(), VarIndexingFactory.indexing(0)));
-                solver.track(
-                        PathUtils.unfold(
-                                monolithicExpr.getTransExpr(), VarIndexingFactory.indexing(0)));
+                TransitionRelation.addToSolver(solver, monolithicExpr);
                 solver.track(
                         PathUtils.unfold(
                                 Not(monolithicExpr.getPropExpr()),
