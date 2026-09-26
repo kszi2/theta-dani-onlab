@@ -49,7 +49,13 @@ constructor(
   val traceCheckerFactory: (MonolithicExpr) -> ExprTraceChecker<ItpRefutation>,
   val logger: Logger = NullLogger.getInstance(),
   val initPrec: (MonolithicExpr) -> PredPrec = { monolithicExpr ->
-    PredPrec.of(listOf(monolithicExpr.propExpr, monolithicExpr.initExpr))
+    // Init conjuncts that are also trans conjuncts are invariants (STS adds every invariant, e.g.
+    // each AIGER AND-gate definition, to both init and trans). Trans enforces them in both states,
+    // so leaving them out of the init predicate keeps the abstraction the same while shrinking the
+    // predicate from the whole circuit to the latch reset values.
+    val transConjuncts = ExprUtils.getConjuncts(monolithicExpr.transExpr).toHashSet()
+    val initOnly = ExprUtils.getConjuncts(monolithicExpr.initExpr).filter { it !in transConjuncts }
+    PredPrec.of(listOf(monolithicExpr.propExpr, SmartBoolExprs.And(initOnly)))
   },
   val refine: (PredPrec, Expr<BoolType>) -> PredPrec = { prec, expr ->
     prec.join(PredPrec.of(expr))
