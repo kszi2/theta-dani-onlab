@@ -235,14 +235,21 @@ public class CarChecker<S extends ExprState, A extends ExprAction>
         currentlyVisited.remove(node);
     }
 
+    /**
+     * Deletes the nodes of the last trace from its init end (the faulty node) up to and including
+     * state {@code pruneIndex}, together with their subtrees. A refutation's prune index counts
+     * from the init end: states 0..pruneIndex are the feasible prefix and the step out of state
+     * pruneIndex is the refuted one, so these are the nodes that were derived through it.
+     */
     public void prune(int pruneIndex, boolean more) {
-        while ((errorLength > pruneIndex + 1) && !errorNode.equals(root)) {
+        int toDelete = pruneIndex + 1;
+        while (toDelete > 0 && errorNode != null && !errorNode.equals(root)) {
             errorLength--;
+            toDelete--;
             Node previousNode = errorNode;
-            delete(previousNode);
             errorNode = errorNode.getParent();
+            delete(previousNode);
         }
-
     }
 
     Node tryBlock(ProofObligationCar mainProofObligation) {
@@ -427,7 +434,8 @@ public class CarChecker<S extends ExprState, A extends ExprAction>
             final var ref = status.asInfeasible().getRefutation();
             if (pruneOpt) {
                 pruneLength++;
-                prune(ref.getPruneIndex() - pruneLength, true);
+                // repeated spurious traces in one check() prune further towards the root
+                prune(ref.getPruneIndex() + pruneLength - 1, true);
                 noNodeIsVisited();
                 return null;
             } else {
