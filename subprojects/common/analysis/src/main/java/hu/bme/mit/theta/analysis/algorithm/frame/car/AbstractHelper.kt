@@ -88,7 +88,11 @@ constructor(
           predToActivationLiteral.getOrPut(expr) {
             Decls.Var("v${nextActivationLiteralIndex++}", BoolType.getInstance())
           }
-        val singleLinePred = expr.toString().replace(Regex("\\s+"), " ").trim()
+        // only rendered if the VERBOSE line is actually printed: predicates can be huge
+        val singleLinePred =
+          object {
+            override fun toString() = expr.toString().replace(Regex("\\s+"), " ").trim()
+          }
         if (alreadyCached) {
           reusedCount++
           logger.write(

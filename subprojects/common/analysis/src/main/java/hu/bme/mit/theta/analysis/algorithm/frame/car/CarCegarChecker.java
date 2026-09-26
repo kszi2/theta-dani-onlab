@@ -32,6 +32,7 @@ import hu.bme.mit.theta.analysis.pred.PredPrec;
 import hu.bme.mit.theta.analysis.pred.PredState;
 import hu.bme.mit.theta.analysis.unit.UnitPrec;
 import hu.bme.mit.theta.common.logging.Logger;
+import hu.bme.mit.theta.core.utils.ExprUtils;
 import hu.bme.mit.theta.solver.SolverFactory;
 import java.util.stream.Collectors;
 import kotlin.jvm.functions.Function1;
@@ -63,7 +64,11 @@ public class CarCegarChecker
         MonolithicExpr abstractModel = helper.createPrec(monolithicExpr);
         var checker = new CarChecker<>(abstractModel, solverFactory, optimizations, logger);
         while (true) {
-            logger.write(Logger.Level.SUBSTEP, "Current prec: %s\n", helper.currentPrec);
+            logger.write(
+                    Logger.Level.SUBSTEP,
+                    "Current prec: %d predicates\n",
+                    helper.currentPrec.getPreds().size());
+            logger.write(Logger.Level.VERBOSE, "Current prec: %s\n", helper.currentPrec);
             var result = checker.check();
             if (result.isSafe()) {
                 logger.write(Logger.Level.MAINSTEP, "Model is safe, stopping CEGAR");
@@ -92,10 +97,11 @@ public class CarCegarChecker
                     final int predCountAfter = helper.currentPrec.getPreds().size();
                     logger.write(
                             Logger.Level.INFO,
-                            "Refinement predicates %s added %d new predicates (now %d)%n",
-                            newPreds,
+                            "Refinement predicates (%d nodes) added %d new predicates (now %d)%n",
+                            newPreds.stream().mapToInt(ExprUtils::nodeCountSize).sum(),
                             predCountAfter - predCountBefore,
                             predCountAfter);
+                    logger.write(Logger.Level.VERBOSE, "Refinement predicates %s%n", newPreds);
                    /* if (predCountAfter == predCountBefore) {
                         // the same abstraction would be rebuilt and the same spurious
                         // counterexample found again, so CEGAR would never terminate
