@@ -59,6 +59,10 @@ constructor(
   private lateinit var concreteModel: MonolithicExpr
   lateinit var currentPrec: PredPrec
 
+  // the concrete model never changes, so one trace checker (and one interpolating solver, i.e. one
+  // native Z3 context) serves every concretisation check
+  private val concreteTraceChecker by lazy { traceCheckerFactory(concreteModel) }
+
   // Activation literals already minted for a predicate are reused across CEGAR iterations
   // (createAbstract is called again with a growing PredPrec every refinement round), so that
   // frame/node content built from earlier iterations still refers to the same Var instances.
@@ -173,7 +177,7 @@ constructor(
           it.actions.map { concreteModel.action() },
         )
       }
-    return traceCheckerFactory(concreteModel).check(trace)
+    return concreteTraceChecker.check(trace)
   }
 
   fun activationLiteralsToPredicates(valuation: Valuation) =

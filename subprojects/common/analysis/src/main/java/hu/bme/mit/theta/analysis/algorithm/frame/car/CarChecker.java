@@ -48,6 +48,7 @@ import hu.bme.mit.theta.core.type.Expr;
 import hu.bme.mit.theta.core.type.booltype.BoolType;
 import hu.bme.mit.theta.core.utils.PathUtils;
 import hu.bme.mit.theta.core.utils.indexings.VarIndexingFactory;
+import hu.bme.mit.theta.solver.ItpSolver;
 import hu.bme.mit.theta.solver.SolverFactory;
 import hu.bme.mit.theta.solver.SolverStatus;
 import hu.bme.mit.theta.solver.utils.WithPushPop;
@@ -63,6 +64,10 @@ public class CarChecker<S extends ExprState, A extends ExprAction>
     }
 
     private final Map<Node, Boolean> currentlyVisited;
+
+    // one interpolating solver for every makeTrace call: each createItpSolver() call allocates a
+    // new native Z3 context, which is never freed
+    private final ItpSolver itpSolver;
 
     private Node root;
 
@@ -96,6 +101,7 @@ public class CarChecker<S extends ExprState, A extends ExprAction>
             Logger logger) {
 
         super(monolithicExpr, solverFactory, optimizations, logger);
+        itpSolver = solverFactory.createItpSolver();
 
         frames.add(new Frame(null, solver, monolithicExpr, optimizations, logger));
         valuations = new ArrayList<>();
@@ -413,7 +419,7 @@ public class CarChecker<S extends ExprState, A extends ExprAction>
                 ExprTraceFwBinItpChecker.create(
                         monolithicExpr.getInitExpr(),
                         Not(monolithicExpr.getPropExpr()),
-                        solverFactory.createItpSolver());
+                        itpSolver);
         ExprTraceStatus<ItpRefutation> status =
                 checker.check(Trace.of(abstractStates, abstractActions));
         if (status.isInfeasible()) {
