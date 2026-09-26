@@ -300,7 +300,10 @@ public class CarChecker<S extends ExprState, A extends ExprAction>
                             removeRedundantVariablesFromProofObligation(
                                     model, Cube.of(proofObligation.getNode().getExprs()));
                 } else {
-                    filteredModel = MutableValuation.copyOf(model);
+                    // project onto the model's state variables: the full solver model also holds
+                    // every concrete variable of the (abstract) transition relation, which would
+                    // turn the node into a concrete state
+                    filteredModel = MutableValuation.copyOf(filterModel(model));
                 }
 
                 final Collection<Expr<BoolType>> reachableExprInFormerFrame =
