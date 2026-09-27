@@ -457,6 +457,14 @@ public class StsCli {
     Boolean carRefreshFrameProp = false;
 
     @Parameter(
+            names = {"--car-deepest-first"},
+            description =
+                    "CAR/CARCEGAR: explore the unchecked node furthest from the root first"
+                            + " instead of the unchecked nodes in insertion order",
+            arity = 1)
+    Boolean carDeepestFirst = false;
+
+    @Parameter(
             names = {"--car-trace-checker"},
             description = "CARCEGAR: interpolating trace checker used for spuriousness checking")
     TraceCheckerType carTraceCheckerType = TraceCheckerType.FW_BIN_ITP;
@@ -590,7 +598,8 @@ public class StsCli {
                 carMonotonousFrames,
                 carStoreFrames,
                 carStoreNodes,
-                carRefreshFrameProp);
+                carRefreshFrameProp,
+                carDeepestFirst);
     }
 
     private void registerSolverManagers() throws IOException {

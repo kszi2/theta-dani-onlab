@@ -24,6 +24,7 @@ public class CarOptimizations extends BaseOptimizations {
     private final boolean storeFrames;
     private final boolean storeNodes;
     private final boolean refreshFrameProp;
+    private final boolean deepestFirst;
 
     public CarOptimizations(
             boolean unSatOpt,
@@ -65,6 +66,36 @@ public class CarOptimizations extends BaseOptimizations {
             boolean storeFrames,
             boolean storeNodes,
             boolean refreshFrameProp) {
+        this(
+                unSatOpt,
+                notBOpt,
+                propagateOpt,
+                propertyOpt,
+                filterOpt,
+                generalizeOpt,
+                unsatPropagateOpt,
+                coverOpt,
+                monotonoousFrames,
+                storeFrames,
+                storeNodes,
+                refreshFrameProp,
+                false);
+    }
+
+    public CarOptimizations(
+            boolean unSatOpt,
+            boolean notBOpt,
+            boolean propagateOpt,
+            boolean propertyOpt,
+            boolean filterOpt,
+            boolean generalizeOpt,
+            boolean unsatPropagateOpt,
+            boolean coverOpt,
+            boolean monotonoousFrames,
+            boolean storeFrames,
+            boolean storeNodes,
+            boolean refreshFrameProp,
+            boolean deepestFirst) {
         super(
                 unSatOpt,
                 notBOpt,
@@ -78,6 +109,7 @@ public class CarOptimizations extends BaseOptimizations {
         this.storeFrames = storeFrames;
         this.storeNodes = storeNodes;
         this.refreshFrameProp = refreshFrameProp;
+        this.deepestFirst = deepestFirst;
     }
 
     public boolean isCoverOpt() {
@@ -111,5 +143,13 @@ public class CarOptimizations extends BaseOptimizations {
      */
     public boolean isRefreshFrameProp() {
         return refreshFrameProp;
+    }
+
+    /**
+     * Whether the main loop explores the unchecked node furthest from the root first (ties in
+     * insertion order). When {@code false}, it explores the unchecked nodes in insertion order.
+     */
+    public boolean isDeepestFirst() {
+        return deepestFirst;
     }
 }

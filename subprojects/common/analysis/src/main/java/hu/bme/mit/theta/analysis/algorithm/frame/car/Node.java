@@ -60,6 +60,9 @@ public class Node {
 
     private Node parent;
 
+    // distance from the root (the root is 0); the parent never changes, so neither does this
+    private final int depth;
+
     // checks if its expression covers, the input expression
     private boolean isCoveredBy(Expr<BoolType> expr) {
         if (!coverOpt || parent == null) {
@@ -96,6 +99,11 @@ public class Node {
         // explored on its own in the main loop, since its covering ancestor already is.
         exprs.add(expr);
         this.parent = parent;
+        this.depth = parent == null ? 0 : parent.depth + 1;
+    }
+
+    public int getDepth() {
+        return depth;
     }
 
     /** The node's cube lies in a strict ancestor above its parent, i.e. it closes a cycle. */

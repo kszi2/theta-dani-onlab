@@ -76,19 +76,23 @@ public class StsCarCegarTest {
                     {"src/test/resources/simple2.system", true},
                     {"src/test/resources/simple3.system", false},
                 });
-        // every model with and without --car-refresh-frame-prop
+        // every model with and without --car-refresh-frame-prop and --car-deepest-first
         return models.stream()
                 .flatMap(
                         m ->
                                 Stream.of(
-                                        new Object[] {m[0], m[1], false},
-                                        new Object[] {m[0], m[1], true}))
+                                        new Object[] {m[0], m[1], false, false},
+                                        new Object[] {m[0], m[1], true, false},
+                                        new Object[] {m[0], m[1], false, true},
+                                        new Object[] {m[0], m[1], true, true}))
                 .toList();
     }
 
     @MethodSource("data")
-    @ParameterizedTest(name = "{index}: {0}, {1}, refresh frame prop: {2}")
-    public void testIC3(String filePath, boolean isSafe, boolean refreshFrameProp)
+    @ParameterizedTest(
+            name = "{index}: {0}, {1}, refresh frame prop: {2}, deepest first: {3}")
+    public void testIC3(
+            String filePath, boolean isSafe, boolean refreshFrameProp, boolean deepestFirst)
             throws IOException {
 
         initStsIc3Test(filePath, isSafe);
@@ -116,7 +120,8 @@ public class StsCarCegarTest {
                                                 Z3LegacySolverFactory.getInstance()),
                                         new CarOptimizations(
                                                 true, true, true, true, true, true, true, true,
-                                                false, true, true, refreshFrameProp),
+                                                false, true, true, refreshFrameProp,
+                                                deepestFirst),
                                         logger),
                         List.of(),
                         List.of(),

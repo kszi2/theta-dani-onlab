@@ -148,6 +148,18 @@ public class CarChecker<S extends ExprState, A extends ExprAction>
                             solver);
             currentlyVisited.put(root, false);
         }
+        if (optimizations.isDeepestFirst()) {
+            // the unchecked node furthest from the root, the first one in insertion order on a tie
+            Node deepest = null;
+            for (var entry : currentlyVisited.entrySet()) {
+                if (!entry.getValue()
+                        && (deepest == null
+                                || entry.getKey().getDepth() > deepest.getDepth())) {
+                    deepest = entry.getKey();
+                }
+            }
+            return deepest;
+        }
         for (Node node :
                 currentlyVisited
                         .keySet()) { // todo can be more faster if the nodes visited in a more
@@ -188,6 +200,7 @@ public class CarChecker<S extends ExprState, A extends ExprAction>
             logger.writeln(Logger.Level.RESULT, result.toString());
             return result;
         }
+        int nodeChecks = 0;
         while (true) {
             Node node = getNotCheckedNode();
             if (node == null) {
@@ -199,10 +212,12 @@ public class CarChecker<S extends ExprState, A extends ExprAction>
                             "CarChecker: fixpoint at frame %d of %d%n",
                             propagateResult,
                             frames.size() - 1);
+                    logTreeStats(nodeChecks);
                     return SafetyResult.safe(
                             PredState.of(frames.get(propagateResult).getExpression())); //todo, maybe add prop too?
                 }
             } else {
+                nodeChecks++;
                 var counterExample = checkCurrentFrameForInterSections(And(node.getExprs()));
                 if (counterExample != null) {
 
@@ -220,6 +235,7 @@ public class CarChecker<S extends ExprState, A extends ExprAction>
                     if (faultyNode != null) {
                         var trace = makeTrace(faultyNode);
                         if (trace != null) {
+                            logTreeStats(nodeChecks);
                             final var result = SafetyResult.unsafe(trace, PredState.of(True()));
                             logger.writeln(Logger.Level.RESULT, result.toString());
                             return result;
@@ -230,6 +246,16 @@ public class CarChecker<S extends ExprState, A extends ExprAction>
                 }
             }
         }
+    }
+
+    private void logTreeStats(int nodeChecks) {
+        logger.write(
+                Logger.Level.INFO,
+                "CarChecker: %d node checks, %d spurious traces, %d nodes, max depth %d%n",
+                nodeChecks,
+                pruneLength,
+                currentlyVisited.size(),
+                currentlyVisited.keySet().stream().mapToInt(Node::getDepth).max().orElse(0));
     }
 
     private void delete(Node node) {
