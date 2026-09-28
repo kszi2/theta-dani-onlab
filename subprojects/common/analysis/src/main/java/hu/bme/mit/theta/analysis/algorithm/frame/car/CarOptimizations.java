@@ -27,6 +27,7 @@ public class CarOptimizations extends BaseOptimizations {
     private final boolean deepestFirst;
     private final boolean resetFrameProp;
     private final boolean resetFrameNumber;
+    private final boolean propagationCache;
 
     public CarOptimizations(
             boolean unSatOpt,
@@ -164,6 +165,42 @@ public class CarOptimizations extends BaseOptimizations {
             boolean deepestFirst,
             boolean resetFrameProp,
             boolean resetFrameNumber) {
+        this(
+                unSatOpt,
+                notBOpt,
+                propagateOpt,
+                propertyOpt,
+                filterOpt,
+                generalizeOpt,
+                unsatPropagateOpt,
+                coverOpt,
+                monotonoousFrames,
+                storeFrames,
+                storeNodes,
+                refreshFrameProp,
+                deepestFirst,
+                resetFrameProp,
+                resetFrameNumber,
+                false);
+    }
+
+    public CarOptimizations(
+            boolean unSatOpt,
+            boolean notBOpt,
+            boolean propagateOpt,
+            boolean propertyOpt,
+            boolean filterOpt,
+            boolean generalizeOpt,
+            boolean unsatPropagateOpt,
+            boolean coverOpt,
+            boolean monotonoousFrames,
+            boolean storeFrames,
+            boolean storeNodes,
+            boolean refreshFrameProp,
+            boolean deepestFirst,
+            boolean resetFrameProp,
+            boolean resetFrameNumber,
+            boolean propagationCache) {
         super(
                 unSatOpt,
                 notBOpt,
@@ -185,6 +222,7 @@ public class CarOptimizations extends BaseOptimizations {
         this.deepestFirst = deepestFirst;
         this.resetFrameProp = resetFrameProp;
         this.resetFrameNumber = resetFrameNumber;
+        this.propagationCache = propagationCache;
     }
 
     public boolean isCoverOpt() {
@@ -246,5 +284,14 @@ public class CarOptimizations extends BaseOptimizations {
      */
     public boolean isResetFrameNumber() {
         return resetFrameNumber;
+    }
+
+    /**
+     * Whether forward propagation skips a clause whose propagation from the same frame was already
+     * tried while neither that frame nor the model changed (the query would give the same result),
+     * and, without {@link #isUnsatPropagateOpt()}, a clause the next frame already implies.
+     */
+    public boolean isPropagationCache() {
+        return propagationCache;
     }
 }

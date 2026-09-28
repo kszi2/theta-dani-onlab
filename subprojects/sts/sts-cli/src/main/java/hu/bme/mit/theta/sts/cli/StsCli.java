@@ -230,7 +230,7 @@ public class StsCli {
                                 monolithicExpr,
                                 solverFactory,
                                 stsCli.carTraceCheckerType.create(
-                                        Z3LegacySolverFactory.getInstance()),
+                                        stsCli.getCarTraceCheckerSolverFactory()),
                                 stsCli.getCarOptimizations(),
                                 stsCli.predSplit.splitter,
                                 logger));
@@ -494,9 +494,24 @@ public class StsCli {
     Boolean carResetFrameNumber = false;
 
     @Parameter(
+            names = {"--car-propagation-cache"},
+            description =
+                    "CAR/CARCEGAR: forward propagation skips clauses whose propagation from the"
+                            + " same, unchanged frame was already tried under the same model",
+            arity = 1)
+    Boolean carPropagationCache = false;
+
+    @Parameter(
             names = {"--car-trace-checker"},
             description = "CARCEGAR: interpolating trace checker used for spuriousness checking")
     TraceCheckerType carTraceCheckerType = TraceCheckerType.FW_BIN_ITP;
+
+    @Parameter(
+            names = {"--car-trace-checker-solver"},
+            description =
+                    "CARCEGAR: SMT solver of the spuriousness trace checker, in the --solver"
+                            + " format (e.g. mathsat:5.6.10); the legacy Z3 solver if not given")
+    String carTraceCheckerSolver = null;
 
     @Parameter(
             names = {"--smt-home"},
@@ -613,6 +628,17 @@ public class StsCli {
         }
     }
 
+    private SolverFactory getCarTraceCheckerSolverFactory() {
+        if (carTraceCheckerSolver == null) {
+            return Z3LegacySolverFactory.getInstance();
+        }
+        try {
+            return SolverManager.resolveSolverFactory(carTraceCheckerSolver);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     private CarOptimizations getCarOptimizations() {
         return new CarOptimizations(
                 carUnSatOpt,
@@ -629,7 +655,8 @@ public class StsCli {
                 carRefreshFrameProp,
                 carDeepestFirst,
                 carResetFrameProp,
-                carResetFrameNumber);
+                carResetFrameNumber,
+                carPropagationCache);
     }
 
     private void registerSolverManagers() throws IOException {

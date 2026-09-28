@@ -168,6 +168,24 @@ public abstract class FrameBasedChecker<O extends BaseOptimizations>
         return false;
     }
 
+    /**
+     * Whether propagation skips clauses whose propagation was already tried under an unchanged
+     * frame and model, and (without unsat core shrinking) clauses the next frame already implies.
+     */
+    protected boolean usePropagationCache() {
+        return false;
+    }
+
+    private void logPropagationStats(int queries, int skippedPresent, int skippedTried) {
+        logger.write(
+                Logger.Level.DETAIL,
+                "\tPropagation: %d queries, skipped %d already tried, %d already in the next"
+                        + " frame%n",
+                queries,
+                skippedTried,
+                skippedPresent);
+    }
+
     protected int propagateForward() {
         final boolean currentProp = fixpointUsesCurrentProp();
         Predicate<Frame> equalityCheck;
@@ -190,9 +208,28 @@ public abstract class FrameBasedChecker<O extends BaseOptimizations>
         }
         currentFrameNumber++;
         if (optimizations.isPropagateOpt()) {
+            final boolean cache = usePropagationCache();
+            int queries = 0;
+            int skippedPresent = 0;
+            int skippedTried = 0;
             for (int j = 1; j < currentFrameNumber; j++) {
                 List<Clause> copyClauses = new ArrayList<>(frames.get(j).getClauses());
                 for (var clause : copyClauses) {
+                    // tried before, and neither this frame nor the model changed since
+                    if (cache && frames.get(j).isPropagationTried(clause)) {
+                        skippedTried++;
+                        continue;
+                    }
+                    // already holds in the next frame; only skipped without the unsat core
+                    // shrinking, which could still turn it into a stronger clause there (and the
+                    // fixpoint check may depend on that)
+                    if (cache
+                            && !optimizations.isUnsatPropagateOpt()
+                            && frames.get(j + 1).hasClauseImplying(clause)) {
+                        skippedPresent++;
+                        continue;
+                    }
+                    queries++;
                     try (var wpp = new WithPushPop(solver)) {
 
                         frames.get(j).addFrameToSolver(VarIndexingFactory.indexing(0));
@@ -207,7 +244,10 @@ public abstract class FrameBasedChecker<O extends BaseOptimizations>
                                                                 expr,
                                                                 monolithicExpr
                                                                         .getTransOffsetIndex())));
-                        if (solver.check().isUnsat()) {
+                        final boolean propagatable = solver.check().isUnsat();
+                        // before the refinements below: one of this frame clears the mark again
+                        frames.get(j).markPropagationTried(clause);
+                        if (propagatable) {
                             if (optimizations.isUnsatPropagateOpt()) {
                                 var unsatCore = solver.getUnsatCore();
                                 blockedCube =
@@ -227,9 +267,11 @@ public abstract class FrameBasedChecker<O extends BaseOptimizations>
                     }
                 }
                 if (equalityCheck.test(frames.get(j + 1))) {
+                    logPropagationStats(queries, skippedPresent, skippedTried);
                     return j + 1;
                 }
             }
+            logPropagationStats(queries, skippedPresent, skippedTried);
         } else if (currentFrameNumber > 1
                 && equalityCheck.test(frames.get(currentFrameNumber - 1))) {
             return currentFrameNumber - 1;

@@ -40,6 +40,11 @@ public class Frame {
     private final Logger logger;
     private Expr<BoolType> originalProp;
 
+    // clauses of this frame whose propagation to the next frame was already tried: the query
+    // depends only on this frame and the model, so until either changes it gives the same result
+    // again (SAT: still not propagatable; UNSAT: its clause is already in the next frame)
+    private final Set<Clause> triedPropagations = new HashSet<>();
+
     public Frame(
             final Frame parent,
             UCSolver solver,
@@ -73,6 +78,7 @@ public class Frame {
      */
     public void setMonolithicExpr(MonolithicExpr monolithicExpr, boolean resetProp) {
         this.monolithicExpr = monolithicExpr;
+        triedPropagations.clear();
         if (resetProp) {
             this.originalProp = monolithicExpr.getPropExpr();
         }
@@ -80,6 +86,26 @@ public class Frame {
 
     public List<Clause> getClauses() {
         return clauses;
+    }
+
+    /** Whether {@code clause} or a stronger clause (a subset of its literals) is in this frame. */
+    public boolean hasClauseImplying(Clause clause) {
+        for (Clause c : clauses) {
+            if (clause.subsumes(c)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Whether propagating {@code clause} from this frame was tried and nothing changed since. */
+    public boolean isPropagationTried(Clause clause) {
+        return triedPropagations.contains(clause);
+    }
+
+    /** Call before any refinement the propagation triggers, which invalidates the mark. */
+    public void markPropagationTried(Clause clause) {
+        triedPropagations.add(clause);
     }
 
     public Expr<BoolType> getExpression() {
@@ -163,6 +189,7 @@ public class Frame {
                     clauses.size() + 1);
         }
         clauses.add(newClause);
+        triedPropagations.clear();
     }
 
     public Valuation checkIfTargetIsReachableValuation(Expr<BoolType> target) {

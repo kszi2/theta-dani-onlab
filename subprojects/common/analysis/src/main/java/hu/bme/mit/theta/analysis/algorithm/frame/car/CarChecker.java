@@ -68,6 +68,11 @@ public class CarChecker<S extends ExprState, A extends ExprAction>
         return optimizations.isRefreshFrameProp();
     }
 
+    @Override
+    protected boolean usePropagationCache() {
+        return optimizations.isPropagationCache();
+    }
+
     private final Map<Node, Boolean> currentlyVisited;
 
     // one interpolating solver for every makeTrace call: each createItpSolver() call allocates a
