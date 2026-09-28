@@ -32,7 +32,6 @@ public final class GenericSmtLibSolverBinary implements SmtLibSolverBinary {
 
     private final NuProcess solverProcess;
     private final ProcessHandler processHandler;
-    private final List<String> issuedCommands = new ArrayList<>();
 
     public GenericSmtLibSolverBinary(final Path solverPath, final String[] args) {
         this(solverPath, args, EnumSet.noneOf(Solver.class));
@@ -60,7 +59,6 @@ public final class GenericSmtLibSolverBinary implements SmtLibSolverBinary {
 
     @Override
     public void issueCommand(final String command) {
-        issuedCommands.add(command);
         checkState(solverProcess.isRunning());
         processHandler.write(command);
         solverProcess.wantWrite();

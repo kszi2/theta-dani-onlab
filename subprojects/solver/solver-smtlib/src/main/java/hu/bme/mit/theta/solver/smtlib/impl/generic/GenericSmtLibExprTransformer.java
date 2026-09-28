@@ -365,13 +365,18 @@ public class GenericSmtLibExprTransformer implements SmtLibExprTransformer {
         } else if (expr.getArity() == 0) {
             return "true";
         } else {
-            return expr.getOps().stream()
-                    .skip(1)
-                    .reduce(
-                            toTerm(expr.getOps().get(0)),
-                            (acc, op) -> String.format("(and %s %s)", acc, toTerm(op)),
-                            (op1, op2) -> String.format("(and %s %s)", op1, op2));
+            return naryTerm("and", expr.getOps());
         }
+    }
+
+    // one flat n-ary application: folding into nested binary ones copies the accumulated string
+    // at every step, which is quadratic in the number of operands (e.g. every gate of a circuit)
+    private String naryTerm(final String operator, final List<? extends Expr<?>> ops) {
+        final StringBuilder sb = new StringBuilder("(").append(operator);
+        for (final Expr<?> op : ops) {
+            sb.append(' ').append(toTerm(op));
+        }
+        return sb.append(')').toString();
     }
 
     protected String transformOr(final OrExpr expr) {
@@ -380,12 +385,7 @@ public class GenericSmtLibExprTransformer implements SmtLibExprTransformer {
         } else if (expr.getArity() == 0) {
             return "false";
         } else {
-            return expr.getOps().stream()
-                    .skip(1)
-                    .reduce(
-                            toTerm(expr.getOps().get(0)),
-                            (acc, op) -> String.format("(or %s %s)", acc, toTerm(op)),
-                            (op1, op2) -> String.format("(or %s %s)", op1, op2));
+            return naryTerm("or", expr.getOps());
         }
     }
 
