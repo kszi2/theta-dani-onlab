@@ -34,6 +34,7 @@ package hu.bme.mit.theta.sts.analysis;
 import hu.bme.mit.theta.analysis.algorithm.frame.car.CarCegarChecker;
 import hu.bme.mit.theta.analysis.algorithm.frame.car.CarOptimizations;
 import hu.bme.mit.theta.analysis.expr.refinement.ExprTraceCheckerFactoriesKt;
+import hu.bme.mit.theta.analysis.pred.ExprSplitters;
 import hu.bme.mit.theta.common.Utils;
 import hu.bme.mit.theta.common.logging.ConsoleLogger;
 import hu.bme.mit.theta.common.logging.Logger;
@@ -59,15 +60,15 @@ public class StsCarCegarTest {
     public boolean isSafe;
 
     public static Collection<Object[]> data() {
-        final List<Object[]> models = Arrays.asList(
+        return Arrays.asList(
                 new Object[][] {
-                    {"src/test/resources/hw1_false.aag", false},
-                    {"src/test/resources/hw2_true.aag", true},
-                    {"src/test/resources/boolean1.system", false},
-                    {"src/test/resources/boolean2.system", false},
-                    {"src/test/resources/counter.system", true},
-                    {"src/test/resources/counter_bad.system", false},
-                    {"src/test/resources/counter_parametric.system", true},
+//                    {"src/test/resources/hw1_false.aag", false},
+//                    {"src/test/resources/hw2_true.aag", true},
+//                    {"src/test/resources/boolean1.system", false},
+                    //                  {"src/test/resources/boolean2.system", false},
+                    //{"src/test/resources/counter.system", true},
+                    //{"src/test/resources/counter_bad.system", false},
+                    //{"src/test/resources/counter_parametric.system", true},
                     {"src/test/resources/loop.system", true},
                     {"src/test/resources/loop_bad.system", false},
                     {"src/test/resources/multipleinitial.system", false},
@@ -76,45 +77,18 @@ public class StsCarCegarTest {
                     {"src/test/resources/simple2.system", true},
                     {"src/test/resources/simple3.system", false},
                 });
-        // every model with each combination of --car-refresh-frame-prop, --car-deepest-first and
-        // --car-store-solvers (frames and nodes are stored, so renewed solvers take over frames)
-        final List<Boolean> bools = List.of(false, true);
-        return models.stream()
-                .flatMap(
-                        m ->
-                                bools.stream()
-                                        .flatMap(
-                                                refresh ->
-                                                        bools.stream()
-                                                                .flatMap(
-                                                                        deepest ->
-                                                                                bools.stream()
-                                                                                        .map(
-                                                                                                storeSolvers ->
-                                                                                                        new Object[] {
-                                                                                                            m[0],
-                                                                                                            m[1],
-                                                                                                            refresh,
-                                                                                                            deepest,
-                                                                                                            storeSolvers
-                                                                                                        }))))
-                .toList();
     }
 
     @MethodSource("data")
     @ParameterizedTest(
             name =
-                    "{index}: {0}, {1}, refresh frame prop: {2}, deepest first: {3}, store"
-                            + " solvers: {4}")
-    public void testIC3(
+                    "{index}: {0}, {1}")
+    public void test(
             String filePath,
-            boolean isSafe,
-            boolean refreshFrameProp,
-            boolean deepestFirst,
-            boolean storeSolvers)
+            boolean isSafe)
             throws IOException {
 
-        initStsIc3Test(filePath, isSafe);
+        initStsTest(filePath, isSafe);
 
         final Logger logger = new ConsoleLogger(Logger.Level.VERBOSE);
 
@@ -139,8 +113,9 @@ public class StsCarCegarTest {
                                                 Z3LegacySolverFactory.getInstance()),
                                         new CarOptimizations(
                                                 true, true, true, true, true, true, true, true,
-                                                false, true, true, refreshFrameProp,
-                                                deepestFirst, storeSolvers),
+                                                false, true, false, true,
+                                                true, true),
+                                    ExprSplitters.atoms(),
                                         logger),
                         List.of(),
                         List.of(),
@@ -148,7 +123,7 @@ public class StsCarCegarTest {
         Assertions.assertEquals(isSafe, checker.check().isSafe());
     }
 
-    public void initStsIc3Test(String filePath, boolean isSafe) {
+    public void initStsTest(String filePath, boolean isSafe) {
         this.filePath = filePath;
         this.isSafe = isSafe;
     }

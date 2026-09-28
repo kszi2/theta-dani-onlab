@@ -19,17 +19,18 @@ import static hu.bme.mit.theta.core.type.booltype.BoolExprs.False;
 import static hu.bme.mit.theta.core.type.booltype.BoolExprs.True;
 
 import com.google.common.base.Preconditions;
+import hu.bme.mit.theta.analysis.Action;
+import hu.bme.mit.theta.analysis.State;
 import hu.bme.mit.theta.analysis.Trace;
 import hu.bme.mit.theta.analysis.algorithm.SafetyChecker;
 import hu.bme.mit.theta.analysis.algorithm.SafetyResult;
 import hu.bme.mit.theta.analysis.algorithm.bounded.MonolithicExpr;
 import hu.bme.mit.theta.analysis.expl.ExplState;
 import hu.bme.mit.theta.analysis.expr.ExprAction;
-import hu.bme.mit.theta.analysis.expr.refinement.ExprTraceChecker;
-import hu.bme.mit.theta.analysis.expr.refinement.ExprTraceStatus;
-import hu.bme.mit.theta.analysis.expr.refinement.ItpRefutation;
+import hu.bme.mit.theta.analysis.expr.refinement.*;
 import hu.bme.mit.theta.analysis.pred.ExprSplitters;
 import hu.bme.mit.theta.analysis.pred.ExprSplitters.ExprSplitter;
+import hu.bme.mit.theta.analysis.pred.ItpRefToPredPrec;
 import hu.bme.mit.theta.analysis.pred.PredPrec;
 import hu.bme.mit.theta.analysis.pred.PredState;
 import hu.bme.mit.theta.analysis.unit.UnitPrec;
@@ -106,23 +107,19 @@ public class CarCegarChecker
                 } else {
                     final var ref = concretizationResult.asInfeasible().getRefutation();
                     checker.prune(ref.getPruneIndex(), false);
-                    // every non-trivial interpolant of the refutation (a binary refutation has
-                    // only one, a sequence refutation can have several)
-                    final var newPreds =
-                            ref.stream()
-                                    .flatMap(itp -> predSplitter.apply(itp).stream())
-                                    .filter(itp -> !itp.equals(True()) && !itp.equals(False()))
-                                    .collect(Collectors.toSet());
+
+                    PrecRefiner<ExplState, ExprAction, PredPrec, ItpRefutation> refiner = JoiningPrecRefiner.create(new ItpRefToPredPrec(predSplitter));
+                    var newPrec = refiner.refine(helper.currentPrec, result.asUnsafe().getCex(), ref);
                     final int predCountBefore = helper.currentPrec.getPreds().size();
-                    helper.currentPrec = helper.currentPrec.join(PredPrec.of(newPreds));
+                    helper.currentPrec = newPrec;
                     final int predCountAfter = helper.currentPrec.getPreds().size();
                     logger.write(
                             Logger.Level.INFO,
                             "Refinement predicates (%d nodes) added %d new predicates (now %d)%n",
-                            newPreds.stream().mapToInt(ExprUtils::nodeCountSize).sum(),
+                            newPrec.getPreds().stream().mapToInt(ExprUtils::nodeCountSize).sum(),
                             predCountAfter - predCountBefore,
                             predCountAfter);
-                    logger.write(Logger.Level.VERBOSE, "Refinement predicates %s%n", newPreds);
+                    logger.write(Logger.Level.VERBOSE, "Refinement predicates %s%n", newPrec);
                    /* if (predCountAfter == predCountBefore) {
                         // the same abstraction would be rebuilt and the same spurious
                         // counterexample found again, so CEGAR would never terminate
