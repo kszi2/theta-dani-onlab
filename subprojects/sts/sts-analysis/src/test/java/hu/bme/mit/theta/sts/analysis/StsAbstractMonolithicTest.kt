@@ -24,7 +24,14 @@ import hu.bme.mit.theta.analysis.algorithm.bounded.pipeline.passes.PredicateAbst
 import hu.bme.mit.theta.analysis.algorithm.mdd.MddChecker
 import hu.bme.mit.theta.analysis.expl.ExplState
 import hu.bme.mit.theta.analysis.expr.ExprAction
+import hu.bme.mit.theta.analysis.algorithm.frame.car.CarChecker
+import hu.bme.mit.theta.analysis.algorithm.frame.car.CarOptimizations
+import hu.bme.mit.theta.analysis.expr.ExprState
+import hu.bme.mit.theta.analysis.expr.refinement.ExprTraceChecker
+import hu.bme.mit.theta.analysis.expr.refinement.ItpRefutation
+import hu.bme.mit.theta.analysis.expr.refinement.createBwBinItpCheckerFactory
 import hu.bme.mit.theta.analysis.expr.refinement.createFwBinItpCheckerFactory
+import hu.bme.mit.theta.analysis.expr.refinement.createSeqItpCheckerFactory
 import hu.bme.mit.theta.analysis.unit.UnitPrec
 import hu.bme.mit.theta.common.Utils
 import hu.bme.mit.theta.common.logging.ConsoleLogger
@@ -67,6 +74,13 @@ class StsAbstractMonolithicTest() {
         Arguments.of("src/test/resources/simple3.system", false),
       )
     }
+
+    // every model with each interpolating trace checker of --cegar-trace-checker
+    @JvmStatic
+    fun traceCheckerData(): Collection<Arguments> =
+      data().flatMap { args ->
+        listOf("FW_BIN_ITP", "BW_BIN_ITP", "SEQ_ITP").map { Arguments.of(*args.get(), it) }
+      }
   }
 
   @Throws(IOException::class)
@@ -76,6 +90,8 @@ class StsAbstractMonolithicTest() {
     logger: Logger,
     checkerBuilderFunction:
       (MonolithicExpr) -> SafetyChecker<out InvariantProof, Trace<ExplState, ExprAction>, UnitPrec>,
+    traceCheckerFactory: (MonolithicExpr) -> ExprTraceChecker<ItpRefutation> =
+      createFwBinItpCheckerFactory(Z3LegacySolverFactory.getInstance()),
   ) {
     val sts: STS
     if (filePath.endsWith("aag")) {
@@ -90,9 +106,7 @@ class StsAbstractMonolithicTest() {
 
     val passes =
       mutableListOf<MonolithicExprPass<InvariantProof>>(
-        PredicateAbstractionMEPass(
-          createFwBinItpCheckerFactory(Z3LegacySolverFactory.getInstance())
-        )
+        PredicateAbstractionMEPass(traceCheckerFactory)
       )
 
     val checker = StsPipelineChecker(sts, checkerBuilderFunction, passes, logger = logger)
@@ -161,5 +175,32 @@ class StsAbstractMonolithicTest() {
     } catch (e: Exception) {
       throw RuntimeException(e)
     }
+  }
+
+  // CAR inside the pipeline's CEGAR loop (StsCli --algorithm CAR --cegar), with the benchmark flags
+  @ParameterizedTest(name = "{index}: {0}, {1}, {2}")
+  @MethodSource("traceCheckerData")
+  @Throws(IOException::class)
+  fun testCar(filePath: String, expectedResult: Boolean, traceChecker: String) {
+    val logger: Logger = ConsoleLogger(Logger.Level.VERBOSE)
+    val solverFactory = Z3LegacySolverFactory.getInstance()
+    val traceCheckerFactory =
+      when (traceChecker) {
+        "FW_BIN_ITP" -> createFwBinItpCheckerFactory(solverFactory)
+        "BW_BIN_ITP" -> createBwBinItpCheckerFactory(solverFactory)
+        "SEQ_ITP" -> createSeqItpCheckerFactory(solverFactory)
+        else -> error(traceChecker)
+      }
+    val optimizations =
+      CarOptimizations(true, true, true, true, false, false, true, true, false, false, false)
+    runTest(
+      filePath,
+      expectedResult,
+      logger,
+      { monolithicExpr: MonolithicExpr ->
+        CarChecker<ExprState, ExprAction>(monolithicExpr, solverFactory, optimizations, logger)
+      },
+      traceCheckerFactory,
+    )
   }
 }

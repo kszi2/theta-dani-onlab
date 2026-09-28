@@ -245,7 +245,10 @@ public class StsCli {
                 getCheckerFactory(StsCli stsCli, SolverFactory solverFactory, Logger logger);
     }
 
-    /** Interpolating trace checker used by CARCEGAR to decide whether a CEX is spurious. */
+    /**
+     * Interpolating trace checker used by CARCEGAR (--car-trace-checker) and the --cegar loop
+     * (--cegar-trace-checker) to decide whether a CEX is spurious.
+     */
     enum TraceCheckerType {
         FW_BIN_ITP(ExprTraceCheckerFactoriesKt::createFwBinItpCheckerFactory),
         BW_BIN_ITP(ExprTraceCheckerFactoriesKt::createBwBinItpCheckerFactory),
@@ -324,6 +327,13 @@ public class StsCli {
             names = {"--cegar"},
             description = "Wrap the analysis in a CEGAR loop")
     Boolean cegar = false;
+
+    @Parameter(
+            names = {"--cegar-trace-checker"},
+            description =
+                    "Interpolating trace checker the --cegar loop uses for spuriousness checking"
+                            + " (CARCEGAR uses --car-trace-checker)")
+    TraceCheckerType cegarTraceCheckerType = TraceCheckerType.FW_BIN_ITP;
 
     @Parameter(
             names = {"--liveness-to-safety"},
@@ -564,8 +574,7 @@ public class StsCli {
                 if (cegar) {
                     passes.add(
                             new PredicateAbstractionMEPass<>(
-                                    ExprTraceCheckerFactoriesKt.createFwBinItpCheckerFactory(
-                                            solverFactory)));
+                                    cegarTraceCheckerType.create(solverFactory)));
                 }
                 if (reversed) {
                     passes.add(new ReverseMEPass<>());

@@ -29,6 +29,8 @@ import hu.bme.mit.theta.analysis.expr.refinement.ExprTraceChecker
 import hu.bme.mit.theta.analysis.expr.refinement.ItpRefutation
 import hu.bme.mit.theta.analysis.pred.PredPrec
 import hu.bme.mit.theta.core.type.Expr
+import hu.bme.mit.theta.core.type.booltype.BoolExprs.False
+import hu.bme.mit.theta.core.type.booltype.BoolExprs.True
 import hu.bme.mit.theta.core.type.booltype.BoolType
 
 /**
@@ -78,7 +80,13 @@ constructor(
       return MonolithicExprPassResult(prTraceUnsafe)
     }
     val refutation = concretizationResult.asInfeasible().refutation
-    currentPrec = refine(currentPrec, refutation[refutation.pruneIndex])
+    // every non-trivial interpolant: a binary refutation has only the one at the prune index, but
+    // in a sequence refutation that one can be False (no predicate), which would find the same
+    // counterexample forever
+    currentPrec =
+      refutation
+        .filter { it != True() && it != False() }
+        .fold(currentPrec) { prec, itp -> refine(prec, itp) }
     return MonolithicExprPassResult(abstractor.abstractModel(currentPrec).model)
   }
 }
