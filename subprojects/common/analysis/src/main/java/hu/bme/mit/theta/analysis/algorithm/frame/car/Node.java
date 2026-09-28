@@ -62,8 +62,7 @@ public class Node {
     private final int depth;
 
     // checks if its expression covers, the input expression; the solver is the one of the node being
-    // created, not stored here, because with --car-store-solvers false stored nodes outlive their
-    // checker's solver
+    // created
     private boolean isCoveredBy(Expr<BoolType> expr, UCSolver solver) {
         if (!coverOpt || parent == null) {
             return false;

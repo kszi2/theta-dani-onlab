@@ -59,7 +59,7 @@ public class CarChecker<S extends ExprState, A extends ExprAction>
     public void setMonolithicExpr(MonolithicExpr monolithicExpr) {
         this.monolithicExpr = monolithicExpr;
         for(var f : frames){
-            f.setMonolithicExpr(monolithicExpr);
+            f.setMonolithicExpr(monolithicExpr, optimizations.isResetFrameProp());
         }
     }
 
@@ -71,11 +71,8 @@ public class CarChecker<S extends ExprState, A extends ExprAction>
     private final Map<Node, Boolean> currentlyVisited;
 
     // one interpolating solver for every makeTrace call: each createItpSolver() call allocates a
-    // new native Z3 context, which is never freed (renewed only with --car-store-solvers false)
-    private ItpSolver itpSolver;
-
-    // check() calls so far; with --car-store-solvers false every call after the first gets new solvers
-    private int checkCount = 0;
+    // new native Z3 context, which is never freed
+    private final ItpSolver itpSolver;
 
     private Node root;
 
@@ -123,18 +120,6 @@ public class CarChecker<S extends ExprState, A extends ExprAction>
         // first unchecked node, and Node has identity hashing, so a hash map would make the search
         // order (and borderline results) differ between runs
         currentlyVisited = new LinkedHashMap<>();
-    }
-
-    /** New solver (frames moved over) and new interpolating solver; the old ones are closed. */
-    private void renewSolvers() {
-        renewSolver();
-        try {
-            itpSolver.close();
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
-        itpSolver = solverFactory.createItpSolver();
-        logger.write(Logger.Level.INFO, "CarChecker: new solvers for this check()%n");
     }
 
     private void resetFrames() {
@@ -188,7 +173,10 @@ public class CarChecker<S extends ExprState, A extends ExprAction>
 
     @Override
     public SafetyResult<PredState, Trace<ExplState, ExprAction>> check(UnitPrec prec) {
-        //currentFrameNumber = 0;
+        if (optimizations.isResetFrameNumber()) {
+            // restart from frame 0; stored frames beyond it are reused by propagateForward
+            currentFrameNumber = 0;
+        }
 
         logger.write(
                 Logger.Level.INFO,
@@ -197,10 +185,7 @@ public class CarChecker<S extends ExprState, A extends ExprAction>
                 frames.size(),
                 frames.stream().mapToInt(f -> f.getClauses().size()).sum(),
                 currentlyVisited.size());
-        if (!optimizations.isStoreSolvers() && checkCount > 0) {
-            renewSolvers();
-        }
-        checkCount++;
+
         if (!optimizations.isStoreFrames()) {
             resetFrames();
         }
@@ -402,8 +387,15 @@ public class CarChecker<S extends ExprState, A extends ExprAction>
                 if (optimizations.isGeneralizeOpt()) {
                     blockedCube = generalizeIter(blockedCube, proofObligation.getTime(), !optimizations.isMonotonoousFrames());
                 }
+                if(optimizations.isMonotonoousFrames()) {
+                    for (int i = 1; i <= proofObligation.getTime(); ++i) {
+                        frames.get(i).refine(blockedCube);
+                    }
+                } else {
+                    frames.get(proofObligation.getTime()).refine(blockedCube);
+                }
 
-                frames.get(proofObligation.getTime()).refine(blockedCube);
+
 
 
                 proofObligationsQueue.removeLast();

@@ -34,11 +34,11 @@ public class Frame {
     private final Frame parent;
     private final List<Clause> clauses;
 
-    private UCSolver solver;
+    private final UCSolver solver;
     private final BaseOptimizations optimizations;
     private MonolithicExpr monolithicExpr;
     private final Logger logger;
-    private final Expr<BoolType> originalProp;
+    private Expr<BoolType> originalProp;
 
     public Frame(
             final Frame parent,
@@ -64,11 +64,18 @@ public class Frame {
     }
 
     public void setMonolithicExpr(MonolithicExpr monolithicExpr) {
-        this.monolithicExpr = monolithicExpr;
+        setMonolithicExpr(monolithicExpr, false);
     }
 
-    public void setSolver(UCSolver solver) {
-        this.solver = solver;
+    /**
+     * @param resetProp also replace the property this frame was built with by the new model's
+     *     property, so every later query (not only the fixpoint check) uses it
+     */
+    public void setMonolithicExpr(MonolithicExpr monolithicExpr, boolean resetProp) {
+        this.monolithicExpr = monolithicExpr;
+        if (resetProp) {
+            this.originalProp = monolithicExpr.getPropExpr();
+        }
     }
 
     public List<Clause> getClauses() {

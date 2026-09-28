@@ -475,12 +475,23 @@ public class StsCli {
     Boolean carDeepestFirst = false;
 
     @Parameter(
-            names = {"--car-store-solvers"},
+            names = {"--car-reset-frame-prop"},
             description =
-                    "CARCEGAR: keep the CAR checker's solvers across CEGAR iterations instead of"
-                            + " replacing them with new ones each iteration",
+                    "CARCEGAR: every frame kept across a refinement (--car-store-frames) replaces"
+                            + " the property it was built with by the refined property, for every"
+                            + " query; requires --car-reset-frame-number true",
             arity = 1)
-    Boolean carStoreSolvers = true;
+    Boolean carResetFrameProp = false;
+
+    @Parameter(
+            names = {"--car-reset-frame-number"},
+            description =
+                    "CARCEGAR: restart the search from frame 0 in every CEGAR iteration, reusing"
+                            + " the frames kept across the refinement (--car-store-frames),"
+                            + " instead of continuing from the frame the previous iteration"
+                            + " stopped at",
+            arity = 1)
+    Boolean carResetFrameNumber = false;
 
     @Parameter(
             names = {"--car-trace-checker"},
@@ -617,7 +628,8 @@ public class StsCli {
                 carStoreNodes,
                 carRefreshFrameProp,
                 carDeepestFirst,
-                carStoreSolvers);
+                carResetFrameProp,
+                carResetFrameNumber);
     }
 
     private void registerSolverManagers() throws IOException {

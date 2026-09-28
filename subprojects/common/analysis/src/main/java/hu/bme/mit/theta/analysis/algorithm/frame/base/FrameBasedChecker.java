@@ -66,22 +66,6 @@ public abstract class FrameBasedChecker<O extends BaseOptimizations>
         this.currentFrameNumber = 0;
     }
 
-    /**
-     * Closes the solver and continues with a new one; the frames are moved over to it. Note that
-     * the legacy Z3 backend's close() only interrupts the solver and does not free its context.
-     */
-    protected void renewSolver() {
-        try {
-            solver.close();
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
-        solver = solverFactory.createUCSolver();
-        for (var frame : frames) {
-            frame.setSolver(solver);
-        }
-    }
-
     protected Set<Expr<BoolType>> convertValuationToExpression(Valuation model) {
         if (model != null) {
             return new HashSet<>(getConjuncts(PathUtils.foldin(filterModel(model).toExpr(), 0)));
@@ -193,13 +177,17 @@ public abstract class FrameBasedChecker<O extends BaseOptimizations>
             equalityCheck = frame -> frame.equalsAllParents(currentProp);
         }
 
-        frames.add(
-                new Frame(
-                        frames.get(currentFrameNumber),
-                        solver,
-                        monolithicExpr,
-                        optimizations,
-                        logger));
+        // after the frame number was reset (see CarOptimizations#isResetFrameNumber), the next
+        // frame may already exist: reuse it with its clauses instead of appending a new one
+        if (frames.size() <= currentFrameNumber + 1) {
+            frames.add(
+                    new Frame(
+                            frames.get(currentFrameNumber),
+                            solver,
+                            monolithicExpr,
+                            optimizations,
+                            logger));
+        }
         currentFrameNumber++;
         if (optimizations.isPropagateOpt()) {
             for (int j = 1; j < currentFrameNumber; j++) {
