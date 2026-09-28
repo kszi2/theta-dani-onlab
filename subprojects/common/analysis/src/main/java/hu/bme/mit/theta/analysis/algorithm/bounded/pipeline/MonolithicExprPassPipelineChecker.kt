@@ -20,7 +20,7 @@ import hu.bme.mit.theta.analysis.algorithm.InvariantProof
 import hu.bme.mit.theta.analysis.algorithm.SafetyChecker
 import hu.bme.mit.theta.analysis.algorithm.SafetyResult
 import hu.bme.mit.theta.analysis.algorithm.bounded.MonolithicExpr
-import hu.bme.mit.theta.analysis.algorithm.bounded.pipeline.constraints.PrimeMEPassValidator
+// import hu.bme.mit.theta.analysis.algorithm.bounded.pipeline.constraints.PrimeMEPassValidator
 import hu.bme.mit.theta.analysis.algorithm.bounded.pipeline.constraints.VariableConsistencyMEPassValidator
 import hu.bme.mit.theta.analysis.expl.ExplState
 import hu.bme.mit.theta.analysis.expr.ExprAction
@@ -52,8 +52,11 @@ constructor(
   ) : this(model, args.checkerFactory, args.passes, args.validators, args.logger)
 
   companion object {
+    // PrimeMEPassValidator is left out: PrimeCounter copies the accumulated variable map at every
+    // operand, which is quadratic in the transition relation, so on million-gate circuits the check
+    // after the first pass did not finish within 900 s, and it only prints to stderr anyway
     fun defaultValidators(): List<MonolithicExprPassValidator<in InvariantProof>> =
-      listOf(PrimeMEPassValidator, VariableConsistencyMEPassValidator)
+      listOf(/* PrimeMEPassValidator, */ VariableConsistencyMEPassValidator)
   }
 
   private val steps: MutableList<PipelineStep<Pr>> = mutableListOf()

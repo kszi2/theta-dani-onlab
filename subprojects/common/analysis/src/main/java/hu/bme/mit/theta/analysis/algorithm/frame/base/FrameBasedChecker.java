@@ -46,7 +46,7 @@ public abstract class FrameBasedChecker<O extends BaseOptimizations>
 
     protected MonolithicExpr monolithicExpr;
     protected final SolverFactory solverFactory;
-    protected final UCSolver solver;
+    protected UCSolver solver;
     protected final O optimizations;
     protected final Logger logger;
     protected final List<Frame> frames;
@@ -64,6 +64,22 @@ public abstract class FrameBasedChecker<O extends BaseOptimizations>
         this.logger = logger;
         this.frames = new ArrayList<>();
         this.currentFrameNumber = 0;
+    }
+
+    /**
+     * Closes the solver and continues with a new one; the frames are moved over to it. Note that
+     * the legacy Z3 backend's close() only interrupts the solver and does not free its context.
+     */
+    protected void renewSolver() {
+        try {
+            solver.close();
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+        solver = solverFactory.createUCSolver();
+        for (var frame : frames) {
+            frame.setSolver(solver);
+        }
     }
 
     protected Set<Expr<BoolType>> convertValuationToExpression(Valuation model) {

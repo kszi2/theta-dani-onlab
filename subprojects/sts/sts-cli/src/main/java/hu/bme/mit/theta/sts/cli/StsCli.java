@@ -465,6 +465,14 @@ public class StsCli {
     Boolean carDeepestFirst = false;
 
     @Parameter(
+            names = {"--car-store-solvers"},
+            description =
+                    "CARCEGAR: keep the CAR checker's solvers across CEGAR iterations instead of"
+                            + " replacing them with new ones each iteration",
+            arity = 1)
+    Boolean carStoreSolvers = true;
+
+    @Parameter(
             names = {"--car-trace-checker"},
             description = "CARCEGAR: interpolating trace checker used for spuriousness checking")
     TraceCheckerType carTraceCheckerType = TraceCheckerType.FW_BIN_ITP;
@@ -599,7 +607,8 @@ public class StsCli {
                 carStoreFrames,
                 carStoreNodes,
                 carRefreshFrameProp,
-                carDeepestFirst);
+                carDeepestFirst,
+                carStoreSolvers);
     }
 
     private void registerSolverManagers() throws IOException {

@@ -35,8 +35,6 @@ public class Node {
 
     private final boolean coverOpt;
 
-    private final UCSolver solver;
-
     public Set<Expr<BoolType>> getExprs() {
         return exprs;
     }
@@ -63,8 +61,10 @@ public class Node {
     // distance from the root (the root is 0); the parent never changes, so neither does this
     private final int depth;
 
-    // checks if its expression covers, the input expression
-    private boolean isCoveredBy(Expr<BoolType> expr) {
+    // checks if its expression covers, the input expression; the solver is the one of the node being
+    // created, not stored here, because with --car-store-solvers false stored nodes outlive their
+    // checker's solver
+    private boolean isCoveredBy(Expr<BoolType> expr, UCSolver solver) {
         if (!coverOpt || parent == null) {
             return false;
         }
@@ -79,16 +79,15 @@ public class Node {
         } else if (parent == null) {
             return false;
         } else {
-            return parent.isCoveredBy(expr);
+            return parent.isCoveredBy(expr, solver);
         }
     }
 
     public Node(Expr<BoolType> expr, Node parent, boolean coverOpt, UCSolver solver) {
         exprs = CollectionUtil.createSet();
-        this.solver = solver;
         this.coverOpt = coverOpt;
         if (parent != null) {
-            covered = parent.isCoveredBy(expr); //todo optimization, which checks only parent?
+            covered = parent.isCoveredBy(expr, solver); //todo optimization, which checks only parent?
         } else {
             covered = false;
         }

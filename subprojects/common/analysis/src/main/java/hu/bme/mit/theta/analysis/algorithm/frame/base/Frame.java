@@ -34,7 +34,7 @@ public class Frame {
     private final Frame parent;
     private final List<Clause> clauses;
 
-    private final UCSolver solver;
+    private UCSolver solver;
     private final BaseOptimizations optimizations;
     private MonolithicExpr monolithicExpr;
     private final Logger logger;
@@ -65,6 +65,10 @@ public class Frame {
 
     public void setMonolithicExpr(MonolithicExpr monolithicExpr) {
         this.monolithicExpr = monolithicExpr;
+    }
+
+    public void setSolver(UCSolver solver) {
+        this.solver = solver;
     }
 
     public List<Clause> getClauses() {

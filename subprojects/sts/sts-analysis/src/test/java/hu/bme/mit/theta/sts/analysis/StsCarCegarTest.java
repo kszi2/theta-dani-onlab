@@ -76,23 +76,42 @@ public class StsCarCegarTest {
                     {"src/test/resources/simple2.system", true},
                     {"src/test/resources/simple3.system", false},
                 });
-        // every model with and without --car-refresh-frame-prop and --car-deepest-first
+        // every model with each combination of --car-refresh-frame-prop, --car-deepest-first and
+        // --car-store-solvers (frames and nodes are stored, so renewed solvers take over frames)
+        final List<Boolean> bools = List.of(false, true);
         return models.stream()
                 .flatMap(
                         m ->
-                                Stream.of(
-                                        new Object[] {m[0], m[1], false, false},
-                                        new Object[] {m[0], m[1], true, false},
-                                        new Object[] {m[0], m[1], false, true},
-                                        new Object[] {m[0], m[1], true, true}))
+                                bools.stream()
+                                        .flatMap(
+                                                refresh ->
+                                                        bools.stream()
+                                                                .flatMap(
+                                                                        deepest ->
+                                                                                bools.stream()
+                                                                                        .map(
+                                                                                                storeSolvers ->
+                                                                                                        new Object[] {
+                                                                                                            m[0],
+                                                                                                            m[1],
+                                                                                                            refresh,
+                                                                                                            deepest,
+                                                                                                            storeSolvers
+                                                                                                        }))))
                 .toList();
     }
 
     @MethodSource("data")
     @ParameterizedTest(
-            name = "{index}: {0}, {1}, refresh frame prop: {2}, deepest first: {3}")
+            name =
+                    "{index}: {0}, {1}, refresh frame prop: {2}, deepest first: {3}, store"
+                            + " solvers: {4}")
     public void testIC3(
-            String filePath, boolean isSafe, boolean refreshFrameProp, boolean deepestFirst)
+            String filePath,
+            boolean isSafe,
+            boolean refreshFrameProp,
+            boolean deepestFirst,
+            boolean storeSolvers)
             throws IOException {
 
         initStsIc3Test(filePath, isSafe);
@@ -121,7 +140,7 @@ public class StsCarCegarTest {
                                         new CarOptimizations(
                                                 true, true, true, true, true, true, true, true,
                                                 false, true, true, refreshFrameProp,
-                                                deepestFirst),
+                                                deepestFirst, storeSolvers),
                                         logger),
                         List.of(),
                         List.of(),

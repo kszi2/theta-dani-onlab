@@ -25,6 +25,7 @@ public class CarOptimizations extends BaseOptimizations {
     private final boolean storeNodes;
     private final boolean refreshFrameProp;
     private final boolean deepestFirst;
+    private final boolean storeSolvers;
 
     public CarOptimizations(
             boolean unSatOpt,
@@ -96,6 +97,38 @@ public class CarOptimizations extends BaseOptimizations {
             boolean storeNodes,
             boolean refreshFrameProp,
             boolean deepestFirst) {
+        this(
+                unSatOpt,
+                notBOpt,
+                propagateOpt,
+                propertyOpt,
+                filterOpt,
+                generalizeOpt,
+                unsatPropagateOpt,
+                coverOpt,
+                monotonoousFrames,
+                storeFrames,
+                storeNodes,
+                refreshFrameProp,
+                deepestFirst,
+                true);
+    }
+
+    public CarOptimizations(
+            boolean unSatOpt,
+            boolean notBOpt,
+            boolean propagateOpt,
+            boolean propertyOpt,
+            boolean filterOpt,
+            boolean generalizeOpt,
+            boolean unsatPropagateOpt,
+            boolean coverOpt,
+            boolean monotonoousFrames,
+            boolean storeFrames,
+            boolean storeNodes,
+            boolean refreshFrameProp,
+            boolean deepestFirst,
+            boolean storeSolvers) {
         super(
                 unSatOpt,
                 notBOpt,
@@ -110,6 +143,7 @@ public class CarOptimizations extends BaseOptimizations {
         this.storeNodes = storeNodes;
         this.refreshFrameProp = refreshFrameProp;
         this.deepestFirst = deepestFirst;
+        this.storeSolvers = storeSolvers;
     }
 
     public boolean isCoverOpt() {
@@ -151,5 +185,15 @@ public class CarOptimizations extends BaseOptimizations {
      */
     public boolean isDeepestFirst() {
         return deepestFirst;
+    }
+
+    /**
+     * Whether the checker keeps its solver and interpolating solver across CARCEGAR iterations.
+     * When {@code false}, both are closed and replaced at the start of every CEGAR iteration after
+     * the first (stored frames move over to the new solver). The concretisation trace checker is
+     * shared either way.
+     */
+    public boolean isStoreSolvers() {
+        return storeSolvers;
     }
 }
