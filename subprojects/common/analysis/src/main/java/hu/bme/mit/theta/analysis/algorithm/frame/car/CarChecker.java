@@ -314,6 +314,13 @@ public class CarChecker<S extends ExprState, A extends ExprAction>
             if (proofObligation.getTime() == 0) {
                 return proofObligation.getNode();
             }
+            // monotone frames all contain the initial states, so a cube with an initial state is
+            // reached in 0 steps and must not be blocked: blocking it would drop initial states
+            // from frames 1..time (the query below only rules out predecessors in the frame)
+            if (optimizations.isMonotonoousFrames()
+                    && checkIfExpressionIntersectsInit(proofObligation.getNode().getExprs())) {
+                return proofObligation.getNode();
+            }
 
             final Collection<Expr<BoolType>> b;
             final SolverStatus solverStatus;

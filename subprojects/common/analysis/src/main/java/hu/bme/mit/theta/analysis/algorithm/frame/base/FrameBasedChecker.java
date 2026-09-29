@@ -230,11 +230,13 @@ public abstract class FrameBasedChecker<O extends BaseOptimizations>
                         continue;
                     }
                     queries++;
+                    Cube blockedCube = clause.negate();
+                    final boolean propagatable;
+                    Collection<Expr<BoolType>> unsatCore = null;
                     try (var wpp = new WithPushPop(solver)) {
 
                         frames.get(j).addFrameToSolver(VarIndexingFactory.indexing(0));
                         TransitionRelation.addToSolver(solver, monolithicExpr);
-                        Cube blockedCube = clause.negate();
                         blockedCube
                                 .getLiterals()
                                 .forEach(
@@ -244,26 +246,31 @@ public abstract class FrameBasedChecker<O extends BaseOptimizations>
                                                                 expr,
                                                                 monolithicExpr
                                                                         .getTransOffsetIndex())));
-                        final boolean propagatable = solver.check().isUnsat();
-                        // before the refinements below: one of this frame clears the mark again
-                        frames.get(j).markPropagationTried(clause);
-                        if (propagatable) {
-                            if (optimizations.isUnsatPropagateOpt()) {
-                                var unsatCore = solver.getUnsatCore();
-                                blockedCube =
-                                        removeRedundantExpressionsUsingUnsatCore(
-                                                blockedCube, unsatCore);
+                        propagatable = solver.check().isUnsat();
+                        if (propagatable && optimizations.isUnsatPropagateOpt()) {
+                            unsatCore = new ArrayList<>(solver.getUnsatCore());
+                        }
+                    }
+                    // before the refinements below: one of this frame clears the mark again
+                    frames.get(j).markPropagationTried(clause);
+                    if (propagatable) {
+                        if (unsatCore != null) {
+                            // outside the query's push/pop: its init intersection checks must
+                            // not see the (unsatisfiable) query, or every one passes and the cube
+                            // can shrink to nothing, i.e. the clause false
+                            blockedCube =
+                                    removeRedundantExpressionsUsingUnsatCore(
+                                            blockedCube, unsatCore);
 
-                                if (optimizations.isMonotonoousFrames()
-                                        && blockedCube.getLiterals().size()
-                                                < clause.getLiterals().size()) {
-                                    for (int k = 1; k <= j; k++) {
-                                        frames.get(k).refine(blockedCube);
-                                    }
+                            if (optimizations.isMonotonoousFrames()
+                                    && blockedCube.getLiterals().size()
+                                            < clause.getLiterals().size()) {
+                                for (int k = 1; k <= j; k++) {
+                                    frames.get(k).refine(blockedCube);
                                 }
                             }
-                            frames.get(j + 1).refine(blockedCube);
                         }
+                        frames.get(j + 1).refine(blockedCube);
                     }
                 }
                 if (equalityCheck.test(frames.get(j + 1))) {
