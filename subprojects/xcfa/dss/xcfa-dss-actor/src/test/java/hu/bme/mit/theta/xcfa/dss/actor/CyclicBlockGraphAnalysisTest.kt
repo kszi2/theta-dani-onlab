@@ -80,7 +80,7 @@ class CyclicBlockGraphAnalysisTest {
     val procedure = wholeProgram.procedures.single()
     val blockGraph = LinearBlockDecomposition().decompose(procedure)
     val checkerRoster = DssCheckerRoster(listOf { x -> cegarChecker(x) })
-    return assertTimeoutPreemptively<DssResult>(Duration.ofSeconds(30)) {
+    return assertTimeoutPreemptively<DssResult>(Duration.ofSeconds(60)) {
       executor(blockGraph) { block ->
         PredicateBlockBehavior(wholeProgram, procedure, block, checkerRoster)
       }

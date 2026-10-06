@@ -17,7 +17,7 @@ package hu.bme.mit.theta.xcfa.dss.actor
 
 /**
  * A participant in the DSS actor network (plan §2). Every actor decides on its own how to answer a
- * received message, and  how to route whatever it produces - see [DssBlockActor] and
+ * received message, and how to route whatever it produces - see [DssBlockActor] and
  * [DssObserverActor] for the two confirmed roles.
  */
 interface DssActor : Runnable {
@@ -72,7 +72,7 @@ abstract class DssWorker(override val id: String) : DssActor {
     try {
       broadcast(processMessage(message))
       return true
-    } catch (e: Exception) {
+    } catch (e: Throwable) { // CPAchecker catches `Exception | Error` here, too
       connection.broadcaster.broadcastToAll(DssExceptionMessage(id, e))
       return false
     } finally {

@@ -16,10 +16,13 @@
 package hu.bme.mit.theta.xcfa.dss.analysis
 
 import hu.bme.mit.theta.core.stmt.Stmts.Assume
+import hu.bme.mit.theta.core.stmt.Stmts.Havoc
 import hu.bme.mit.theta.core.type.Expr
 import hu.bme.mit.theta.core.type.booltype.BoolType
 import hu.bme.mit.theta.xcfa.dss.decomposition.Block
+import hu.bme.mit.theta.xcfa.dss.decomposition.GhostEdgeMetadata
 import hu.bme.mit.theta.xcfa.model.EmptyMetaData
+import hu.bme.mit.theta.xcfa.model.SequenceLabel
 import hu.bme.mit.theta.xcfa.model.StmtLabel
 import hu.bme.mit.theta.xcfa.model.XCFA
 import hu.bme.mit.theta.xcfa.model.XcfaEdge
@@ -29,96 +32,124 @@ import hu.bme.mit.theta.xcfa.model.XcfaProcedure
 import java.util.Optional
 
 /**
- * The result of [extractBlockXcfa]: the standalone [xcfa] itself, plus [locationMapping] from the
- * original [Block]'s locations to their clones inside [xcfa] - needed because [xcfa] does not share
- * location identity with the source procedure (see [extractBlockXcfa]'s doc), so looking up e.g. a
- * postcondition for [Block.violationConditionLocation] in a [runWorkerConfig] result requires the
- * cloned location, not the original.
+ * The result of [extractBlockXcfa]: the standalone [xcfa], plus [locationMapping] from the original
+ * [Block]'s locations to their clones inside [xcfa] (the clones do not share identity with the
+ * source procedure). [exitLocation] is the clone where the block's postcondition is read off
+ * (CPAchecker's block-end abstraction point). It differs from
+ * `locationMapping[block.initialLocation]` even when the block starts and ends at the same location
+ * (a loop body), see [extractBlockXcfa].
  */
 data class BlockXcfaExtraction(
   val xcfa: XCFA,
   val locationMapping: Map<XcfaLocation, XcfaLocation>,
+  val entryLocation: XcfaLocation,
+  val exitLocation: XcfaLocation,
 )
 
 /**
- * Extracts [block] into a standalone, checkable [XCFA] containing only that block's own
- * locations/edges, with [Block.initialLocation] as the entry point - "block = whole program" for
- * whatever runs against the result (e.g. [runWorkerConfig]). If [precondition] is given, a
- * synthetic `assume(precondition)` edge is prepended before the block's real entry, so the checker
- * explores from states satisfying it instead of from top - the `unpackPost` half of the plan's §3
- * pack/unpack pair, implemented as an ordinary assume rather than by seeding a custom initial
- * state, since Theta's predicate-domain init function is hardcoded to start from `True()`
- * (`getPredXcfaInitFunc`) and reaching into that is unnecessary when the existing edge machinery
- * already does the job.
+ * Extracts [block] into a standalone, checkable [XCFA] that contains only the block's own locations
+ * and edges. This is the Theta counterpart of what CPAchecker's `BlockCPA` does inside one shared
+ * CFA: restricting the analysis to the block's edges, starting it at the block entry, and making
+ * the violation-condition location a target when violation conditions are attached.
+ * - [precondition] (CPAchecker: the start state of a block analysis) becomes a synthetic
+ *   `assume(precondition)` edge in front of the block entry. `null` means the most general entry
+ *   state (top), which starts the analysis without any constraint.
+ * - [violationCondition] (CPAchecker: the violation conditions attached to the `BlockState`, which
+ *   make the violation-condition location a target) becomes an edge from [exitLocation] into an
+ *   error location that havocs the auxiliary existential variables of the condition (see
+ *   [DssAuxVars]) and then assumes it. Reaching the error location through that edge is exactly
+ *   "reaching the block end in a state that satisfies the violation condition".
+ * - [keepSpecificationTargets] decides whether the block's own error locations stay error
+ *   locations. CPAchecker always checks the specification; Theta's checkers stop at the first
+ *   counterexample, so the block analysis turns them off when it only wants the postcondition of a
+ *   block whose targets are already known to be reachable (see `PredicateBlockBehavior`).
  *
- * Theta's predicate CEGAR has no runtime equivalent of CPAchecker's
- * `cpa.predicate.blk.alwaysAtGivenNodes`: `getPredXcfaTransFunc` (confirmed by reading it) computes
- * a fresh abstraction after *every* edge, unconditionally - "large blocks" are a static property of
- * the graph (what `LbePass` collapses away before analysis), not a per-run decision the CEGAR loop
- * makes. So there is no way to tell a checker "explore this whole procedure, but only abstract at
- * this one location" the way CPAchecker's worker config does. Extracting each block into its own
- * tiny standalone program and running the ordinary checker on it sidesteps that entirely: the
- * checker abstracts at every location *inside* the block too, which is sound (just less precise/
- * performant than CPAchecker's exact block granularity) - an accepted v1 gap, matching the plan's
- * own "profile before assuming the port is slow" guidance rather than something to fix
- * pre-emptively.
+ * The block entry and the block exit get separate clones when they are the same location (a loop
+ * body that starts and ends at the loop head). This mirrors CPAchecker's `BlockStateType.INITIAL`
+ * vs. `FINAL`: the block end "cannot be reached directly before processing the first edge" -
+ * without the split, the entry state would immediately count as a block-end state, and the body
+ * could be iterated arbitrarily often inside a single block analysis.
  *
- * Clones every [XcfaLocation]/[XcfaEdge] the block owns, rather than reusing the originals as-is.
- * This is not optional: [XcfaLocation.incomingEdges]/[XcfaLocation.outgoingEdges] are mutable,
- * freshly-initialized-per-instance sets - not `data class` constructor parameters - so the
- * *original* location objects still carry every edge from the *whole* source procedure, regardless
- * of what this function's own [XcfaProcedure.locs]/[XcfaProcedure.edges] declare. The real
- * ARG-building traversal reads location adjacency directly, not the owning procedure's edge set, so
- * reusing locations unmodified does not isolate the block at all - confirmed by a test failure
- * during development: a block with no error location of its own was found "unsafe" by walking
- * straight through a shared, unrestricted location into a neighbouring block's error location.
- * [sourceProcedure] supplies `vars` (passed through unfiltered, not narrowed to just what the
- * block's own edges reference - correctness over a minor, unnecessary optimization) since [Block]
- * does not track its own variable subset.
+ * Every [XcfaLocation]/[XcfaEdge] is cloned rather than reused: a location's
+ * `incomingEdges`/`outgoingEdges` are mutable sets that still contain every edge of the whole
+ * source procedure, so reusing them would not isolate the block. [sourceProcedure] supplies `vars`
+ * (unfiltered), and [globalVars] the global variables of the extracted program (DSS passes the
+ * program's real globals only for the root block, whose entry is the real program entry).
  */
 fun extractBlockXcfa(
   sourceProcedure: XcfaProcedure,
   block: Block,
   globalVars: Set<XcfaGlobalVar> = emptySet(),
   precondition: Expr<BoolType>? = null,
+  violationCondition: Expr<BoolType>? = null,
+  keepSpecificationTargets: Boolean = true,
 ): BlockXcfaExtraction {
   val name = "${sourceProcedure.name}__${block.id}"
 
-  val clonedLocations: Map<XcfaLocation, XcfaLocation> =
-    block.locations.associateWith { original ->
-      XcfaLocation(
-        original.name,
-        original.initial,
-        original.final,
-        original.error,
-        original.metadata,
-      )
-    }
-  val clonedEdges: MutableSet<XcfaEdge> =
-    block.edges
-      .map { original ->
-        val clone =
-          XcfaEdge(
-            clonedLocations.getValue(original.source),
-            clonedLocations.getValue(original.target),
-            original.label,
-            original.metadata,
-          )
-        clone.source.outgoingEdges.add(clone)
-        clone.target.incomingEdges.add(clone)
-        clone
-      }
-      .toMutableSet()
+  fun cloneOf(original: XcfaLocation, nameSuffix: String = "") =
+    XcfaLocation(
+      original.name + nameSuffix,
+      original.initial,
+      original.final,
+      original.error && keepSpecificationTargets,
+      original.metadata,
+    )
 
-  val allLocations = clonedLocations.values.toMutableSet()
-  var entryLoc = clonedLocations.getValue(block.initialLocation)
+  val clonedLocations: Map<XcfaLocation, XcfaLocation> = block.locations.associateWith(::cloneOf)
+  val splitEntry = block.initialLocation == block.finalLocation
+  val blockEntry =
+    if (splitEntry) cloneOf(block.initialLocation, "__entry")
+    else clonedLocations.getValue(block.initialLocation)
+
+  val allLocations = clonedLocations.values.toMutableSet().apply { add(blockEntry) }
+  val clonedEdges = mutableSetOf<XcfaEdge>()
+  fun connect(source: XcfaLocation, target: XcfaLocation, edge: XcfaEdge) {
+    source.outgoingEdges.add(edge)
+    target.incomingEdges.add(edge)
+    clonedEdges.add(edge)
+  }
+
+  for (original in block.edges) {
+    // In a split loop-head block, the body leaves from the entry clone; the ghost edge (if any)
+    // leaves from the exit clone, i.e., only after the body has been processed.
+    val source =
+      if (
+        splitEntry &&
+          original.source == block.initialLocation &&
+          original.metadata != GhostEdgeMetadata
+      )
+        blockEntry
+      else clonedLocations.getValue(original.source)
+    val target = clonedLocations.getValue(original.target)
+    connect(source, target, XcfaEdge(source, target, original.label, original.metadata))
+  }
+
+  val exitLocation = clonedLocations.getValue(block.violationConditionLocation)
+  val procedureVars = sourceProcedure.vars.toMutableSet()
+
+  var errorLocation = allLocations.firstOrNull { it.error }
+  if (violationCondition != null) {
+    val target =
+      errorLocation
+        ?: XcfaLocation("${name}__vcond", error = true, metadata = EmptyMetaData).also {
+          allLocations.add(it)
+          errorLocation = it
+        }
+    val auxVars = DssAuxVars.varsOf(violationCondition)
+    procedureVars.addAll(auxVars)
+    val label =
+      SequenceLabel(auxVars.map { StmtLabel(Havoc(it)) } + StmtLabel(Assume(violationCondition)))
+    connect(exitLocation, target, XcfaEdge(exitLocation, target, label, EmptyMetaData))
+  }
+
+  var entryLoc = blockEntry
   if (precondition != null) {
-    val syntheticEntry = XcfaLocation("${name}__entry", metadata = EmptyMetaData)
-    val assumeEdge =
-      XcfaEdge(syntheticEntry, entryLoc, StmtLabel(Assume(precondition)), EmptyMetaData)
-    syntheticEntry.outgoingEdges.add(assumeEdge)
-    entryLoc.incomingEdges.add(assumeEdge)
-    clonedEdges.add(assumeEdge)
+    val syntheticEntry = XcfaLocation("${name}__pre", metadata = EmptyMetaData)
+    connect(
+      syntheticEntry,
+      entryLoc,
+      XcfaEdge(syntheticEntry, entryLoc, StmtLabel(Assume(precondition)), EmptyMetaData),
+    )
     allLocations.add(syntheticEntry)
     entryLoc = syntheticEntry
   }
@@ -127,19 +158,17 @@ fun extractBlockXcfa(
     XcfaProcedure(
       name = name,
       params = emptyList(),
-      vars = sourceProcedure.vars,
+      vars = procedureVars,
       locs = allLocations,
       edges = clonedEdges,
       initLoc = entryLoc,
-      finalLoc = clonedLocations.values.firstOrNull { it.final }.toOptional(),
-      errorLoc = clonedLocations.values.firstOrNull { it.error }.toOptional(),
+      finalLoc = Optional.ofNullable(clonedLocations.values.firstOrNull { it.final }),
+      errorLoc = Optional.ofNullable(errorLocation),
     )
   // XCFA's public constructor only accepts XcfaProcedureBuilders, which would re-run the whole
   // pass/optimize pipeline - build an empty container instead and swap in the already-built
   // procedure via `recreate`.
   val xcfa =
     XCFA(name, globalVars).recreate(setOf(blockProcedure), listOf(blockProcedure to emptyList()))
-  return BlockXcfaExtraction(xcfa, clonedLocations)
+  return BlockXcfaExtraction(xcfa, clonedLocations, blockEntry, exitLocation)
 }
-
-private fun <T : Any> T?.toOptional(): Optional<T> = Optional.ofNullable(this)

@@ -26,9 +26,9 @@ dependencies {
     implementation(project(":theta-xcfa"))
     implementation(project(":theta-xcfa-analysis"))
     implementation(project(":theta-xcfa-dss-decomposition"))
+    implementation(project(":theta-solver"))
 
     testImplementation(project(":theta-grammar"))
-    testImplementation(project(":theta-solver"))
     testImplementation(project(":theta-solver-z3"))
     // Only tests need a real checker to exercise runWorkerConfig against - production code takes
     // one as an injected factory instead (see WorkerConfigDelegator.kt), specifically so this

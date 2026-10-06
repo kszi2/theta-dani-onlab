@@ -30,8 +30,8 @@ package hu.bme.mit.theta.xcfa.cli.params
  * [domain] defaults to [Domain.PRED_CART], preserving every existing zero-argument call site's
  * original behavior unchanged; DSS's own `ConfigToDssChecker.kt` is the one caller that passes a
  * different value, for its `DssCheckerBackend.CEGAR_PRED_BOOL`/`CEGAR_PRED_SPLIT` options - see
- * `doc/DSS-analysis.md`'s `DssCheckerBackend` section for why only the three `PredPrec`-based
- * domains are offered there, not [Domain.EXPL] or the product domains.
+ * `doc/DSS.md` for why only the three `PredPrec`-based domains are offered there, not [Domain.EXPL]
+ * or the product domains.
  */
 fun defaultPredicateCegarConfig(
   domain: Domain = Domain.PRED_CART

@@ -103,11 +103,14 @@ enum class Backend {
  * implemented, so it isn't offered here.
  */
 enum class DssDecomposition {
-  /** `blk_linear`: a block boundary at every branch/join point/dead end. */
+  /** CPAchecker's `LINEAR_DECOMPOSITION`: a block boundary at every branch/join point/dead end. */
   LINEAR,
-  /** `LINEAR`, then horizontal/vertical merging down toward [DssConfig.dssTargetBlockCount]. */
+  /**
+   * CPAchecker's `MERGE_DECOMPOSITION` (its default): `LINEAR`, then horizontal/vertical merging
+   * down toward [DssConfig.targetBlockCount].
+   */
   MERGE,
-  /** The whole procedure as a single block - the `NO_DECOMPOSITION` degenerate case. */
+  /** CPAchecker's `NO_DECOMPOSITION`: the whole procedure as a single block. */
   NONE,
 }
 
@@ -126,7 +129,7 @@ enum class DssExecutor {
 
 /**
  * Which `DssCheckerSelectionStrategy` (`xcfa-dss-analysis`) a `DssCheckerRoster` uses to pick one
- * of [DssConfig.checkerBackends]'s checker factories on each recheck - see `doc/DSS-analysis.md`'s
+ * of [DssConfig.checkerBackends]'s checker factories on each recheck - see `doc/DSS.md`'s
  * `DssCheckerRoster` section. `ROUND_ROBIN` is the only built-in strategy today; this enum exists
  * so *which* strategy is used is itself a CLI-exposed, parametrised choice rather than a hardcoded
  * one - a future strategy (e.g. least-used/weighted) only needs a new case here plus a branch where
@@ -139,8 +142,8 @@ enum class DssCheckerSelectionMethod {
 
 /**
  * Which backend algorithm one entry of [DssConfig.checkerBackends] builds a DSS block checker
- * factory with - see `doc/DSS-analysis.md`'s `DssCheckerRoster` section. Restricted to the subset
- * of [Backend] that produces the `LocationInvariants`/`Trace` proof shape DSS's own `XcfaChecker`
+ * factory with - see `doc/DSS.md`'s `DssCheckerRoster` section. Restricted to the subset of
+ * [Backend] that produces the `LocationInvariants`/`Trace` proof shape DSS's own `XcfaChecker`
  * (`xcfa-dss-analysis`) requires: `getSafetyChecker`'s `CEGAR` and bounded-model-checking
  * (`BMC`/`KIND`/`IMC`/`KINDIMC`/`BOUNDED`) cases share it, so they're offered here; every other
  * `Backend` (`OC`, `CHC`, `PORTFOLIO`, `IC3`, `MDD`, ...) produces a genuinely incompatible

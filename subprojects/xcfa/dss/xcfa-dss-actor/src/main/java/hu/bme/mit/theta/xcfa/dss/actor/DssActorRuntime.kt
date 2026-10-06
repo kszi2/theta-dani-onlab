@@ -49,7 +49,9 @@ fun runDssActors(
   val extraIds = if (visualizationLog != null) setOf(VISUALIZER_ID) else emptySet()
   val inboxes =
     (blockGraph.blocks.map { it.id } + OBSERVER_ID + extraIds).associateWith {
-      LinkedBlockingQueue<DssMessage>()
+      // The visualizer must log every message, so it reads in plain arrival order instead of
+      // letting the final RESULT/STATISTIC messages overtake (and end its run before) the rest.
+      if (it == VISUALIZER_ID) LinkedBlockingQueue<DssMessage>() else newDssMessageQueue()
     }
   val connectionsForBroadcaster =
     inboxes.mapValues { (id, queue) ->

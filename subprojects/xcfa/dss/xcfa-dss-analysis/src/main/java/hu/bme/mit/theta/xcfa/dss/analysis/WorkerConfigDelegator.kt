@@ -19,6 +19,7 @@ import hu.bme.mit.theta.analysis.Trace
 import hu.bme.mit.theta.analysis.algorithm.SafetyChecker
 import hu.bme.mit.theta.analysis.algorithm.SafetyResult
 import hu.bme.mit.theta.analysis.ptr.PtrState
+import hu.bme.mit.theta.solver.SolverManager
 import hu.bme.mit.theta.xcfa.analysis.XcfaAction
 import hu.bme.mit.theta.xcfa.analysis.XcfaPrec
 import hu.bme.mit.theta.xcfa.analysis.XcfaState
@@ -133,15 +134,27 @@ typealias CheckerFactory = (XCFA) -> XcfaChecker
  * of standing up a new `Context` serialized to stay inside whatever discipline the native library
  * actually needs. Confirmed via repeated stress runs of the full concurrent suite
  * (`xcfa-dss-actor`'s cyclic/nested/merge/diverse-program tests) with no further native crashes -
- * see `doc/DSS-bugs-and-verification.md` for the full writeup.
+ * see `doc/DSS.md`.
  */
 private val solverConstructionLock = Any()
+
+/**
+ * Runs [construct] under the same lock as checker construction in [runWorkerConfig] - for anything
+ * else in DSS that creates a native solver context (e.g. [DssPredicateOperators]).
+ */
+fun <T> withSolverConstructionLock(construct: () -> T): T =
+  synchronized(solverConstructionLock) { construct() }
 
 fun runWorkerConfig(
   xcfa: XCFA,
   checkerFactory: CheckerFactory,
   initialPrecision: XcfaPrec<*>? = null,
 ): SafetyResult<LocationInvariants, Trace<XcfaState<PtrState<*>>, XcfaAction>> {
-  val checker = synchronized(solverConstructionLock) { checkerFactory(xcfa) }
-  return if (initialPrecision != null) checker.check(initialPrecision) else checker.check()
+  // Every solver the checker creates is closed once the check is done (and under the same lock as
+  // construction): solver managers otherwise keep each one alive until SolverManager.closeAll(),
+  // and DSS builds a fresh checker for every single block analysis.
+  return SolverManager.withSolverScope(solverConstructionLock) {
+    val checker = withSolverConstructionLock { checkerFactory(xcfa) }
+    if (initialPrecision != null) checker.check(initialPrecision) else checker.check()
+  }
 }

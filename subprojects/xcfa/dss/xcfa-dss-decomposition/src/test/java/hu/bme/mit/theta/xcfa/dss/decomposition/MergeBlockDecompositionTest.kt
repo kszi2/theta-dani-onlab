@@ -98,14 +98,14 @@ class MergeBlockDecompositionTest {
   }
 
   @Test
-  fun `maxHorizontalGroupSize is honored end to end`() {
+  fun `largestHorizontalMerge is honored end to end`() {
     val procedure = threeWayBranchJoinProcedure()
 
     val merged =
-      MergeBlockDecomposition(targetBlockCount = 1, maxHorizontalGroupSize = 2).decompose(procedure)
+      MergeBlockDecomposition(targetBlockCount = 1, largestHorizontalMerge = 2).decompose(procedure)
 
     merged.checkConsistency()
-    // The group of three arms is larger than the cap, so horizontal merging must never touch it,
+    // Every arm has more locations than the limit, so horizontal merging must never touch them,
     // regardless of how aggressively the target asks to shrink the graph.
     val armBlocks = merged.blocks.filter { it.locations.any { loc -> loc.name.startsWith("arm") } }
     assertEquals(3, armBlocks.size)

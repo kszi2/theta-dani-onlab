@@ -64,10 +64,10 @@ class BlockGraphMergingTest {
   }
 
   @Test
-  fun `horizontalMergePass leaves a group larger than the cap unmerged`() {
+  fun `horizontalMergePass leaves a group of blocks above the size limit unmerged`() {
     val blockGraph = LinearBlockDecomposition().decompose(branchJoinProcedure())
 
-    val result = horizontalMergePass(blockGraph, maxGroupSize = 1)
+    val result = horizontalMergePass(blockGraph, largestHorizontalMerge = 1)
 
     result.checkConsistency()
     assertEquals(blockGraph.blocks.map { it.id }.toSet(), result.blocks.map { it.id }.toSet())
@@ -93,7 +93,7 @@ class BlockGraphMergingTest {
   }
 
   @Test
-  fun `verticalMergePass collapses a forced straight-line chain down to one block`() {
+  fun `verticalMerge collapses a forced straight-line chain down to one block`() {
     val procedure =
       xcfa("straight-line") {
           procedure("main") {
@@ -107,11 +107,11 @@ class BlockGraphMergingTest {
         .procedures
         .single()
     // Force every location to be its own block boundary, so this still decomposes into multiple
-    // separate blocks for verticalMergePass to have something to collapse.
+    // separate blocks for verticalMerge to have something to collapse.
     val blockGraph = LinearBlockDecomposition(isBlockEnd = { true }).decompose(procedure)
     assertTrue(blockGraph.blocks.size > 1)
 
-    val merged = verticalMergePass(blockGraph)
+    val merged = verticalMerge(blockGraph)
 
     merged.checkConsistency()
     assertEquals(1, merged.blocks.size)
@@ -120,7 +120,7 @@ class BlockGraphMergingTest {
   }
 
   @Test
-  fun `verticalMergePass fuses every unbranched run, including a forcibly-split single arm, but stops exactly at the real join`() {
+  fun `verticalMerge fuses every unbranched run, including a forcibly-split single arm, but stops exactly at the real join`() {
     val procedure =
       xcfa("branch-join-with-runs") {
           procedure("main") {
@@ -138,12 +138,12 @@ class BlockGraphMergingTest {
         .procedures
         .single()
     // Force every location to be its own block boundary, so this decomposes into one block per
-    // edge in the first place, for verticalMergePass to have something to collapse - otherwise
+    // edge in the first place, for verticalMerge to have something to collapse - otherwise
     // LinearBlockDecomposition's own snake-collapsing would already have merged most of it.
     val blockGraph = LinearBlockDecomposition(isBlockEnd = { true }).decompose(procedure)
     assertEquals(8, blockGraph.blocks.size)
 
-    val merged = verticalMergePass(blockGraph)
+    val merged = verticalMerge(blockGraph)
 
     merged.checkConsistency()
     // init->pre and pre->branch fuse; branch->armA and armA->join fuse (armA is not a real branch
@@ -191,14 +191,14 @@ class BlockGraphMergingTest {
         .single()
     val blockGraph = LinearBlockDecomposition(isBlockEnd = { true }).decompose(procedure)
 
-    val merged = horizontalMergePass(verticalMergePass(blockGraph))
+    val merged = horizontalMerge(verticalMerge(blockGraph))
 
     merged.checkConsistency()
     assertEquals(3, merged.blocks.size)
   }
 
   @Test
-  fun `verticalMergePass correctly remaps a hand-built two-block cycle into one self-referencing block`() {
+  fun `verticalMerge correctly remaps a hand-built two-block cycle into one self-referencing block`() {
     val r = loc("R")
     val a = loc("A")
     val b = loc("B")
@@ -226,7 +226,7 @@ class BlockGraphMergingTest {
     val blockGraph = BlockGraph(setOf(root, x, y))
     blockGraph.checkConsistency() // the fixture itself must be valid before testing the merge
 
-    val merged = verticalMergePass(blockGraph)
+    val merged = verticalMerge(blockGraph)
 
     merged.checkConsistency()
     assertEquals(2, merged.blocks.size)
@@ -235,5 +235,53 @@ class BlockGraphMergingTest {
     assertTrue(combined.id in combined.successorIds, "expected a self-reference, not a stale id")
     assertEquals(setOf("root", combined.id), combined.predecessorIds)
     assertEquals(setOf(combined.id), merged.blocks.single { it.id == "root" }.successorIds)
+  }
+
+  private fun chainProcedure(): XcfaProcedure =
+    xcfa("chain") {
+        procedure("main") {
+          "x" type Int()
+          (init to "L0") { "x" assign "0" }
+          ("L0" to "L1") { "x" assign "(+ x 1)" }
+          ("L1" to "L2") { "x" assign "(+ x 1)" }
+          ("L2" to final) { "x" assign "(+ x 1)" }
+        }
+      }
+      .procedures
+      .single()
+
+  @Test
+  fun `blocks are named like CPAchecker's - L for linear, MH and MV for merged blocks`() {
+    val linear = LinearBlockDecomposition().decompose(branchJoinProcedure())
+    assertEquals(setOf("L0", "L1", "L2", "L3"), linear.blocks.map { it.id }.toSet())
+
+    val horizontal = horizontalMergePass(linear)
+    assertTrue(horizontal.blocks.any { it.id == "MH0" }, "${horizontal.blocks.map { it.id }}")
+
+    val vertical = verticalMergePass(horizontal)
+    assertTrue(vertical.blocks.any { it.id == "MV0" }, "${vertical.blocks.map { it.id }}")
+  }
+
+  @Test
+  fun `a single verticalMergePass merges every block at most once, like CPAchecker's`() {
+    val blockGraph = LinearBlockDecomposition(isBlockEnd = { true }).decompose(chainProcedure())
+    assertEquals(4, blockGraph.blocks.size)
+
+    val onePass = verticalMergePass(blockGraph)
+
+    onePass.checkConsistency()
+    // L0+L1 and L2+L3 fuse; the two results only fuse in the next pass.
+    assertEquals(setOf("MV0", "MV1"), onePass.blocks.map { it.id }.toSet())
+    assertEquals(1, verticalMergePass(onePass).blocks.size)
+  }
+
+  @Test
+  fun `merge passes stop as soon as the target block count is reached`() {
+    val blockGraph = LinearBlockDecomposition(isBlockEnd = { true }).decompose(chainProcedure())
+
+    val merged = verticalMergePass(blockGraph, targetBlockCount = 3)
+
+    merged.checkConsistency()
+    assertEquals(3, merged.blocks.size)
   }
 }

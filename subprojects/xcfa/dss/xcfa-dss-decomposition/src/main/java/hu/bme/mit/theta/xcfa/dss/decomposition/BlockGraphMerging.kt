@@ -16,125 +16,219 @@
 package hu.bme.mit.theta.xcfa.dss.decomposition
 
 /**
- * One horizontal-merge pass, mirroring CPAchecker's confirmed `HorizontalMergeDecomposition`:
- * groups blocks that are structurally parallel - the exact same `(predecessorIds, successorIds,
- * finalLocation)` triple, e.g. the two arms of an `if`/`else` that rejoin at the same point - and
- * merges each group of more than one into a single block covering all of their locations/edges.
- *
- * All members of such a group necessarily share [Block.initialLocation] too, even though it is not
- * part of the grouping key: for a non-root block, [Block.predecessorIds] being equal forces it (a
- * consistent [BlockGraph] already requires every predecessor's [Block.finalLocation] to equal this
- * block's [Block.initialLocation], so two blocks with the same predecessor set are pinned to the
- * same value); a [BlockGraph] can only ever have one root, so an empty [Block.predecessorIds] can
- * never appear twice.
- *
- * [maxGroupSize] mirrors CPAchecker's optional `largestHorizontalMerge` cap: a group larger than
- * this is left unmerged rather than collapsed into one large block, trading a lower block count for
- * preserving whatever parallelism that group represented. Unbounded (`Int.MAX_VALUE`) by default.
- *
- * Blocks with no structural sibling (a group of size 1) pass through unchanged, including their
- * existing id - a full [BlockGraph] rebuild only actually happens for merged groups, so ids stay
- * stable across passes that do not touch a given block. Merged blocks default
- * [Block.violationConditionLocation] back to their own [Block.finalLocation] - a pre-existing
- * dedicated abstraction point ([BlockGraphInstrumentation]) does not carry a defined meaning once
- * its owning block has been folded into a larger one, so instrumentation is expected to run *after*
- * merging, not before (matching CPAchecker's own pipeline order: decompose, then merge, then
- * instrument).
+ * CPAchecker's `HorizontalMergeDecomposition.NO_MERGE_LIMIT`: no size limit on horizontal merges.
  */
-fun horizontalMergePass(blockGraph: BlockGraph, maxGroupSize: Int = Int.MAX_VALUE): BlockGraph {
-  val groups =
-    blockGraph.blocks.groupBy { Triple(it.predecessorIds, it.successorIds, it.finalLocation) }
+const val NO_MERGE_LIMIT = -1
 
-  val passthrough = mutableListOf<Block>()
-  val merged = mutableListOf<Block>()
-  val idRemap = mutableMapOf<String, String>()
-  for (group in groups.values) {
-    if (group.size <= 1 || group.size > maxGroupSize) {
-      passthrough.addAll(group)
-    } else {
-      val mergedBlock = mergeParallelGroup(group)
-      merged.add(mergedBlock)
-      for (member in group) {
-        idRemap[member.id] = mergedBlock.id
+/**
+ * Hands out the ids of merged blocks, mirroring CPAchecker's naming: `MH<n>` for horizontal merges
+ * and `MV<n>` for vertical merges, each with its own counter that keeps counting across passes (in
+ * CPAchecker the counter is a field of the long-lived `HorizontalMergeDecomposition`/
+ * `VerticalMergeDecomposition` instance). [startingAfter] continues the numbering of a graph that
+ * may already contain merged blocks, so independent calls never produce colliding ids.
+ */
+class MergeIdGenerator(private var horizontal: Int = 0, private var vertical: Int = 0) {
+
+  fun nextHorizontal(): String = "MH${horizontal++}"
+
+  fun nextVertical(): String = "MV${vertical++}"
+
+  companion object {
+
+    fun startingAfter(blockGraph: BlockGraph): MergeIdGenerator {
+      fun next(prefix: String) =
+        blockGraph.blocks
+          .filter { it.id.startsWith(prefix) }
+          .mapNotNull { it.id.removePrefix(prefix).toIntOrNull() }
+          .maxOrNull()
+          ?.plus(1) ?: 0
+      return MergeIdGenerator(next("MH"), next("MV"))
+    }
+  }
+}
+
+/**
+ * CPAchecker sorts the block nodes by id between merge passes, which makes merging deterministic.
+ */
+private fun Collection<Block>.sortedById(): List<Block> = sortedBy { it.id }
+
+/**
+ * One horizontal-merge pass, mirroring CPAchecker's
+ * `HorizontalMergeDecomposition.mergeHorizontally`: groups blocks that have the exact same
+ * `(predecessorIds, successorIds, finalLocation)` scope (for example the two arms of an `if`/`else`
+ * that rejoin at the same location) and merges each group of more than one block into a single
+ * block `MH<n>` covering all of their locations and edges.
+ *
+ * As in CPAchecker:
+ * - groups are visited in the order of their (id-sorted) members, and the pass stops as soon as the
+ *   graph has at most [targetBlockCount] blocks;
+ * - [largestHorizontalMerge] limits merging by block *size*: a group is skipped when more than one
+ *   of its blocks has more than [largestHorizontalMerge] locations ([NO_MERGE_LIMIT] disables the
+ *   limit).
+ *
+ * All members of such a group necessarily share [Block.initialLocation] too: for a non-root block,
+ * equal [Block.predecessorIds] force it, and a [BlockGraph] has only one root.
+ *
+ * Merged blocks default [Block.violationConditionLocation] back to their own [Block.finalLocation],
+ * so [BlockGraphInstrumentation] has to run after merging (CPAchecker's own order: decompose,
+ * merge, instrument).
+ */
+fun horizontalMergePass(
+  blockGraph: BlockGraph,
+  targetBlockCount: Int = 0,
+  largestHorizontalMerge: Int = NO_MERGE_LIMIT,
+  ids: MergeIdGenerator = MergeIdGenerator.startingAfter(blockGraph),
+): BlockGraph {
+  val groups =
+    LinkedHashMap<Triple<Set<String>, Set<String>, Any>, MutableList<Block>>().apply {
+      for (block in blockGraph.blocks.sortedById()) {
+        getOrPut(Triple(block.predecessorIds, block.successorIds, block.finalLocation)) {
+            mutableListOf()
+          }
+          .add(block)
       }
     }
+
+  val idRemap = mutableMapOf<String, String>()
+  var blockCount = blockGraph.blocks.size
+  for ((scope, group) in groups.entries.toList()) {
+    if (blockCount <= targetBlockCount) break
+    if (group.size <= 1) continue
+    val largeBlocks = group.count { it.locations.size > largestHorizontalMerge }
+    if (largestHorizontalMerge >= 0 && largeBlocks > 1) continue
+
+    val merged = mergeHorizontally(group, ids.nextHorizontal())
+    for (member in group) {
+      idRemap[member.id] = merged.id
+    }
+    groups[scope] = mutableListOf(merged)
+    blockCount -= group.size - 1
   }
 
   if (idRemap.isEmpty()) {
     return blockGraph
   }
-  // Every block's own predecessor/successor ids need rewriting, not just the merged ones' - a
-  // block that passed through unmerged can still have referenced one of the ids a *different*
-  // group just folded away (e.g. its predecessor was itself horizontally merged in this same
-  // pass), and a merged block's own predecessorIds/successorIds (copied from its representative
-  // member) can reference another group's now-stale id the same way.
-  return BlockGraph((passthrough + merged).map { remapBlockIds(it, idRemap) }.toSet())
+  return BlockGraph(groups.values.flatten().map { remapBlockIds(it, idRemap) }.toSet())
 }
 
-private fun mergeParallelGroup(group: List<Block>): Block {
-  val representative = group.first()
+private fun mergeHorizontally(group: List<Block>, id: String): Block {
+  val first = group.first()
   return Block(
-    id = group.joinToString("+") { it.id },
-    initialLocation = representative.initialLocation,
-    finalLocation = representative.finalLocation,
+    id = id,
+    initialLocation = first.initialLocation,
+    finalLocation = first.finalLocation,
     locations = group.flatMapTo(mutableSetOf()) { it.locations },
     edges = group.flatMapTo(mutableSetOf()) { it.edges },
-    predecessorIds = representative.predecessorIds,
-    successorIds = representative.successorIds,
+    predecessorIds = first.predecessorIds,
+    successorIds = first.successorIds,
   )
 }
 
 /**
- * One vertical-merge pass, mirroring CPAchecker's confirmed `VerticalMergeDecomposition`:
- * repeatedly finds a block `X` with exactly one successor `Y` whose *only* predecessor is `X` - an
- * unbranched, un-joined straight-line edge in the block graph, not just in the underlying CFA - and
- * merges the two into one block, `X`'s [Block.predecessorIds] plus `Y`'s [Block.successorIds].
- * Every other block's own predecessor/successor ids that referenced `X` or `Y` are rewritten to the
- * new block's id (CPAchecker's `MergeIDTracker`, done here by rebuilding the working block set with
- * a plain id-substitution map each time a pair merges) - including the merged block's own ids, in
- * the (unusual but legal) case where `X` and `Y` are *also* connected the other way around (`Y`
- * already one of `X`'s own predecessors too), which would otherwise leave a stale reference to an
- * id that no longer exists.
+ * One vertical-merge pass, mirroring CPAchecker's `VerticalMergeDecomposition.mergeVertically`:
+ * walks the (id-sorted) blocks once, and merges a block `X` with its successor `Y` into a new block
+ * `MV<n>` whenever `X` has exactly one successor and `Y` has exactly one predecessor (necessarily
+ * `X`). Each block takes part in at most one merge per pass, and the pass stops as soon as the
+ * graph has at most [targetBlockCount] blocks. Predecessor/successor ids of every other block are
+ * rewritten to the new ids (CPAchecker's `MergeIDTracker`), including the merged block's own ids
+ * when `X` and `Y` also form a cycle.
  *
- * Runs to a fixpoint: each merge strictly reduces the block count by one, so this always
- * terminates, regardless of the graph's shape (including graphs with cycles elsewhere - a chain
- * eligible for vertical merging is, by definition, not itself part of one).
+ * A block that is its own only successor is never merged with itself (CPAchecker would assert here;
+ * such a block is unreachable in a valid block graph anyway).
  */
-fun verticalMergePass(blockGraph: BlockGraph): BlockGraph {
-  var blocks = blockGraph.blocks.associateBy { it.id }
-
-  while (true) {
-    val pair =
-      blocks.values.firstNotNullOfOrNull { x ->
-        val successorId = x.successorIds.singleOrNull() ?: return@firstNotNullOfOrNull null
-        if (successorId == x.id) return@firstNotNullOfOrNull null
-        val y = blocks[successorId] ?: return@firstNotNullOfOrNull null
-        if (y.predecessorIds != setOf(x.id)) return@firstNotNullOfOrNull null
-        x to y
-      } ?: break
-
-    val (x, y) = pair
-    val newId = "${x.id}+${y.id}"
-    val idRemap = mapOf(x.id to newId, y.id to newId)
-    val combined =
-      remapBlockIds(
-        Block(
-          id = newId,
-          initialLocation = x.initialLocation,
-          finalLocation = y.finalLocation,
-          locations = x.locations + y.locations,
-          edges = x.edges + y.edges,
-          predecessorIds = x.predecessorIds,
-          successorIds = y.successorIds,
-        ),
-        idRemap,
-      )
-    blocks =
-      blocks.values.filter { it.id !in idRemap }.associate { it.id to remapBlockIds(it, idRemap) } +
-        (newId to combined)
+fun verticalMergePass(
+  blockGraph: BlockGraph,
+  targetBlockCount: Int = 0,
+  ids: MergeIdGenerator = MergeIdGenerator.startingAfter(blockGraph),
+): BlockGraph {
+  val blocks = LinkedHashMap<String, Block>()
+  blockGraph.blocks.sortedById().forEach { blocks[it.id] = it }
+  val idRemap = mutableMapOf<String, String>()
+  fun resolve(id: String): String {
+    var current = id
+    while (true) current = idRemap[current] ?: return current
   }
 
-  return BlockGraph(blocks.values.toSet())
+  val removed = mutableSetOf<String>()
+  for (x in blockGraph.blocks.sortedById()) {
+    if (x.id in removed) continue
+    val successorId = x.successorIds.singleOrNull()?.let(::resolve) ?: continue
+    if (successorId == x.id) continue
+    val y = blocks[successorId] ?: continue
+    if (y.predecessorIds.size != 1) continue
+
+    val merged =
+      Block(
+        id = ids.nextVertical(),
+        initialLocation = x.initialLocation,
+        finalLocation = y.finalLocation,
+        locations = x.locations + y.locations,
+        edges = x.edges + y.edges,
+        predecessorIds = x.predecessorIds,
+        successorIds = y.successorIds,
+      )
+    blocks.remove(x.id)
+    blocks.remove(y.id)
+    blocks[merged.id] = merged
+    removed += x.id
+    removed += y.id
+    idRemap[x.id] = merged.id
+    idRemap[y.id] = merged.id
+    if (blocks.size <= targetBlockCount) break
+  }
+
+  if (idRemap.isEmpty()) {
+    return blockGraph
+  }
+  return BlockGraph(
+    blocks.values
+      .map { block ->
+        block.copy(
+          predecessorIds = block.predecessorIds.map(::resolve).toSet(),
+          successorIds = block.successorIds.map(::resolve).toSet(),
+        )
+      }
+      .toSet()
+  )
+}
+
+/**
+ * Repeats [horizontalMergePass] until the graph has at most [targetBlockCount] blocks or a pass
+ * changes nothing - CPAchecker's `HorizontalMergeDecomposition.decompose`.
+ */
+fun horizontalMerge(
+  blockGraph: BlockGraph,
+  targetBlockCount: Int = 1,
+  largestHorizontalMerge: Int = NO_MERGE_LIMIT,
+  ids: MergeIdGenerator = MergeIdGenerator.startingAfter(blockGraph),
+): BlockGraph =
+  repeatUntilStable(blockGraph, targetBlockCount) {
+    horizontalMergePass(it, targetBlockCount, largestHorizontalMerge, ids)
+  }
+
+/**
+ * Repeats [verticalMergePass] until the graph has at most [targetBlockCount] blocks or a pass
+ * changes nothing - CPAchecker's `VerticalMergeDecomposition.decompose`.
+ */
+fun verticalMerge(
+  blockGraph: BlockGraph,
+  targetBlockCount: Int = 1,
+  ids: MergeIdGenerator = MergeIdGenerator.startingAfter(blockGraph),
+): BlockGraph =
+  repeatUntilStable(blockGraph, targetBlockCount) { verticalMergePass(it, targetBlockCount, ids) }
+
+private fun repeatUntilStable(
+  blockGraph: BlockGraph,
+  targetBlockCount: Int,
+  pass: (BlockGraph) -> BlockGraph,
+): BlockGraph {
+  var current = blockGraph
+  while (current.blocks.size > targetBlockCount) {
+    val next = pass(current)
+    if (next.blocks.size == current.blocks.size) return next
+    current = next
+  }
+  return current
 }
 
 private fun remapBlockIds(block: Block, idRemap: Map<String, String>): Block =
@@ -144,25 +238,25 @@ private fun remapBlockIds(block: Block, idRemap: Map<String, String>): Block =
   )
 
 /**
- * Alternates [horizontalMergePass] and [verticalMergePass] - mirroring CPAchecker's confirmed
- * `MergeBlockNodesDecomposition` - until [blockGraph] has at most [targetBlockCount] blocks, or
- * until a full horizontal-then-vertical round makes no further progress at all (whichever comes
- * first: [targetBlockCount] is not always reachable, e.g. a graph with real branching cannot be
- * merged below the number of structurally-independent paths through it without
- * [horizontalMergePass] discarding correctness, which it never does).
+ * Alternates [horizontalMergePass] and [verticalMergePass] exactly like CPAchecker's
+ * `MergeBlockNodesDecomposition.decompose`: a horizontal pass, stop if at most [targetBlockCount]
+ * blocks remain, a vertical pass, stop if the round did not reduce the block count, repeat.
+ * [targetBlockCount] is not always reachable (a graph with real, non-rejoining branching cannot be
+ * merged below the number of its divergent paths).
  */
 fun mergeToTargetBlockCount(
   blockGraph: BlockGraph,
   targetBlockCount: Int,
-  maxHorizontalGroupSize: Int = Int.MAX_VALUE,
+  largestHorizontalMerge: Int = NO_MERGE_LIMIT,
 ): BlockGraph {
+  val ids = MergeIdGenerator.startingAfter(blockGraph)
   var current = blockGraph
   while (current.blocks.size > targetBlockCount) {
-    val next = verticalMergePass(horizontalMergePass(current, maxHorizontalGroupSize))
-    if (next.blocks.size == current.blocks.size) {
-      return next
-    }
-    current = next
+    val sizeBefore = current.blocks.size
+    current = horizontalMergePass(current, targetBlockCount, largestHorizontalMerge, ids)
+    if (current.blocks.size <= targetBlockCount) break
+    current = verticalMergePass(current, targetBlockCount, ids)
+    if (current.blocks.size == sizeBefore) break
   }
   return current
 }

@@ -101,7 +101,7 @@ class DssBlockActor(
     try {
       broadcast(behavior.initialMessages())
       true
-    } catch (e: Exception) {
+    } catch (e: Throwable) { // CPAchecker catches `Exception | Error` here, too
       connection.broadcaster.broadcastToAll(DssExceptionMessage(id, e))
       false
     }

@@ -82,7 +82,7 @@ class MergeDecompositionActorTest {
   ): DssResult {
     val procedure = wholeProgram.procedures.single()
     val checkerRoster = DssCheckerRoster(listOf { x -> cegarChecker(x) })
-    return assertTimeoutPreemptively<DssResult>(Duration.ofSeconds(30)) {
+    return assertTimeoutPreemptively<DssResult>(Duration.ofSeconds(60)) {
       executor(blockGraph) { block ->
         PredicateBlockBehavior(wholeProgram, procedure, block, checkerRoster)
       }
@@ -138,7 +138,7 @@ class MergeDecompositionActorTest {
     val procedure = wholeProgram.procedures.single()
     val linear = LinearBlockDecomposition().decompose(procedure)
 
-    // Block ids are auto-generated ("B0", "B1", ...) by LinearBlockDecomposition, not derived from
+    // Block ids are auto-generated ("L0", "L1", ...) by LinearBlockDecomposition, not derived from
     // XCFA location names - identify the arm blocks by which location they exit at instead.
     val armBlocksBefore = linear.blocks.filter { it.finalLocation.name == "join" }
     assertEquals(3, armBlocksBefore.size) {

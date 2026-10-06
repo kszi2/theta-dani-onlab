@@ -33,15 +33,16 @@ private const val SEQUENTIAL_EXECUTOR_ID = "sequential-executor"
  * protocol.
  *
  * The difference is entirely in how messages get delivered: no [Thread] per block, no
- * [DssThreadMonitor] polling thread state. Instead, this function itself repeatedly picks any actor
- * with a pending message and calls [DssWorker.processOneMessage] directly on the calling thread.
- * Global quiescence - the SAFE case - is detected the same way [DssThreadMonitor] detects it (every
- * queue empty), except trivially rather than by polling: since nothing runs concurrently with this
- * loop, "no queue has a pending message" already *is* "nothing can happen next", with no race to
- * guard against and no need for the `active` bookkeeping [DssThreadMonitor] needs to close one. The
- * UNSAFE case still short-circuits exactly as [DssBlockActor] already implements it (a root block's
- * own [DssBlockActor.broadcast] enqueues `RESULT(UNSAFE)` to everyone); this driver only ever needs
- * to originate `RESULT(SAFE)` itself.
+ * [DssThreadMonitor] polling thread state. Instead, this function itself visits the actors
+ * round-robin (one pending message each per round, like CPAchecker's `SequentialDssExecutor`) and
+ * calls [DssWorker.processOneMessage] directly on the calling thread. Global quiescence - the SAFE
+ * case - is detected the same way [DssThreadMonitor] detects it (every queue empty), except
+ * trivially rather than by polling: since nothing runs concurrently with this loop, "no queue has a
+ * pending message" already *is* "nothing can happen next", with no race to guard against and no
+ * need for the `active` bookkeeping [DssThreadMonitor] needs to close one. The UNSAFE case still
+ * short-circuits exactly as [DssBlockActor] already implements it (a root block's own
+ * [DssBlockActor.broadcast] enqueues `RESULT(UNSAFE)` to everyone); this driver only ever needs to
+ * originate `RESULT(SAFE)` itself.
  *
  * Because everything happens on one thread, this executor is also incidentally free of the Z3
  * concurrency hazard [runWorkerConfig][hu.bme.mit.theta.xcfa.dss.analysis.runWorkerConfig]'s global
@@ -57,8 +58,11 @@ fun runDssActorsSequentially(
   val active = mutableSetOf<String>()
   val extraIds = if (visualizationLog != null) setOf(SEQUENTIAL_VISUALIZER_ID) else emptySet()
   val inboxes =
-    (blockGraph.blocks.map { it.id } + SEQUENTIAL_OBSERVER_ID + extraIds).associateWith {
-      LinkedBlockingQueue<DssMessage>()
+    (blockGraph.blocks.map { it.id }.sorted() + SEQUENTIAL_OBSERVER_ID + extraIds).associateWith {
+      // The visualizer must log every message, so it reads in plain arrival order instead of
+      // letting the final RESULT/STATISTIC messages overtake (and end its run before) the rest.
+      if (it == SEQUENTIAL_VISUALIZER_ID) LinkedBlockingQueue<DssMessage>()
+      else newDssMessageQueue()
     }
   val connectionsForBroadcaster =
     inboxes.mapValues { (id, queue) ->
@@ -100,18 +104,33 @@ fun runDssActorsSequentially(
 
   blockActors.values.forEach { it.start() }
 
-  // Keeps draining even after the observer itself has shut down, in case the visualizer's own
-  // copy of the last STATISTIC message (or anything else) is still sitting unprocessed in its
-  // separate queue - the observer and the visualizer reach their own shutdown conditions
-  // independently, from independent queues, so one finishing first must not cut the other off.
-  while (!observer.shutdownRequested() || inboxes.values.any { it.isNotEmpty() }) {
-    val pending = inboxes.entries.firstOrNull { (_, queue) -> queue.isNotEmpty() }
-    if (pending == null) {
-      broadcaster.broadcastToAll(DssResultMessage(SEQUENTIAL_EXECUTOR_ID, DssResult.SAFE))
-      continue
+  // Round-robin like CPAchecker's SequentialDssExecutor: every actor with a pending message
+  // processes one message per round, so a block that keeps feeding itself (a loop body) cannot
+  // starve the others. Keeps draining even after the observer itself has shut down, in case the
+  // visualizer's own copy of the last STATISTIC message (or anything else) is still sitting
+  // unprocessed in its separate queue - the observer and the visualizer reach their own shutdown
+  // conditions independently, from independent queues, so one finishing first must not cut the
+  // other off.
+  fun hasWorkLeft() =
+    !observer.shutdownRequested() ||
+      inboxes.any { (id, queue) -> !workers.getValue(id).shutdownRequested() && queue.isNotEmpty() }
+  while (hasWorkLeft()) {
+    var processedAny = false
+    for ((id, queue) in inboxes) {
+      val worker = workers.getValue(id)
+      if (worker.shutdownRequested()) {
+        // Like a worker thread of the concurrent executor, a finished actor reads nothing anymore
+        // (CPAchecker's sequential executor stops at the first RESULT altogether).
+        queue.clear()
+        continue
+      }
+      val message = queue.poll() ?: continue
+      processedAny = true
+      worker.processOneMessage(message)
     }
-    val message = pending.value.poll() ?: continue
-    workers.getValue(pending.key).processOneMessage(message)
+    if (!processedAny && !observer.shutdownRequested()) {
+      broadcaster.broadcastToAll(DssResultMessage(SEQUENTIAL_EXECUTOR_ID, DssResult.SAFE))
+    }
   }
 
   return observer.verdict()

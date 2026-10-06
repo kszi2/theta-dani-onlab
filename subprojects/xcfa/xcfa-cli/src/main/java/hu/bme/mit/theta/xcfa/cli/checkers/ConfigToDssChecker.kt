@@ -52,8 +52,10 @@ import hu.bme.mit.theta.xcfa.dss.analysis.RoundRobinCheckerSelectionStrategy
 import hu.bme.mit.theta.xcfa.dss.analysis.XcfaChecker
 import hu.bme.mit.theta.xcfa.dss.decomposition.Block
 import hu.bme.mit.theta.xcfa.dss.decomposition.BlockGraph
+import hu.bme.mit.theta.xcfa.dss.decomposition.DssBlockDecomposition
 import hu.bme.mit.theta.xcfa.dss.decomposition.LinearBlockDecomposition
 import hu.bme.mit.theta.xcfa.dss.decomposition.MergeBlockDecomposition
+import hu.bme.mit.theta.xcfa.dss.decomposition.SingleBlockDecomposition
 import hu.bme.mit.theta.xcfa.model.XCFA
 
 /**
@@ -113,36 +115,24 @@ fun getDssChecker(
           "procedures) - see doc/DSS.md's Known Limitations."
       )
 
-  val blockGraph: BlockGraph =
+  // CPAchecker instruments every block end with a ghost edge to a dedicated violation-condition
+  // location after decomposing (BlockGraphModification.instrumentCFA, on a copy of the CFA). Not
+  // needed here: every block is extracted into its own XCFA, where the block exit is a private
+  // location already (see extractBlockXcfa), and BlockGraphInstrumentation would mutate the input
+  // XCFA's locations in place.
+  val decomposition: DssBlockDecomposition =
     when (dssConfig.decomposition) {
-      DssDecomposition.LINEAR -> LinearBlockDecomposition().decompose(procedure)
+      DssDecomposition.LINEAR -> LinearBlockDecomposition()
       DssDecomposition.MERGE ->
-        MergeBlockDecomposition(targetBlockCount = dssConfig.targetBlockCount).decompose(procedure)
-      DssDecomposition.NONE ->
-        // NO_DECOMPOSITION: the whole procedure as a single block, mirroring CPAchecker's
-        // SingleBlockDecomposition (finalLocation = the procedure's own dead-end/exit location,
-        // not its entry - a single-block, no-successor root never actually needs its postcondition
-        // consumed, but violationConditionLocation still defaults to finalLocation, and a wrong
-        // value there would silently pack a meaningless postcondition if this were ever inspected).
-        BlockGraph(
-          setOf(
-            Block(
-              id = "whole",
-              initialLocation = procedure.initLoc,
-              finalLocation =
-                procedure.locs.singleOrNull { it.outgoingEdges.isEmpty() }
-                  ?: procedure.finalLoc.orElseThrow {
-                    IllegalStateException(
-                      "DSS --dss-decomposition NONE requires the procedure to have exactly one " +
-                        "dead-end location or a designated final location"
-                    )
-                  },
-              locations = procedure.locs,
-              edges = procedure.edges,
-            )
-          )
+        MergeBlockDecomposition(
+          targetBlockCount = dssConfig.targetBlockCount,
+          largestHorizontalMerge = dssConfig.largestHorizontalMerge,
+          allowSingleBlockDecomposition = dssConfig.allowSingleBlockDecomposition,
         )
+      DssDecomposition.NONE -> SingleBlockDecomposition
     }
+  val blockGraph: BlockGraph = decomposition.decompose(procedure)
+  blockGraph.checkConsistency()
 
   require(dssConfig.checkerBackends.isNotEmpty()) {
     "--dss-checker-backends must list at least one backend"
@@ -199,6 +189,7 @@ fun getDssChecker(
       block,
       checkerRoster,
       useGlobalPredicatePool = dssConfig.globalPredicatePool,
+      resetPrecisionForEveryRun = dssConfig.resetPrecisionForEveryRun,
     )
   }
 

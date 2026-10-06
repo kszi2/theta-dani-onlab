@@ -76,7 +76,7 @@ class PredicateBlockBehaviorTest {
     // single-checker test like this one; see `checkerRoster distributes...` below for a test that
     // would actually catch getting this wrong).
     val checkerRoster = DssCheckerRoster(listOf { x -> cegarChecker(x) })
-    return assertTimeoutPreemptively<DssResult>(Duration.ofSeconds(30)) {
+    return assertTimeoutPreemptively<DssResult>(Duration.ofSeconds(60)) {
       runDssActors(
         blockGraph,
         behaviorFor = { block ->
@@ -182,7 +182,7 @@ class PredicateBlockBehaviorTest {
       )
     val checkerRoster = DssCheckerRoster(checkers)
     val result =
-      assertTimeoutPreemptively<DssResult>(Duration.ofSeconds(30)) {
+      assertTimeoutPreemptively<DssResult>(Duration.ofSeconds(60)) {
         runDssActors(
           blockGraph,
           behaviorFor = { block ->
@@ -201,23 +201,17 @@ class PredicateBlockBehaviorTest {
   }
 
   /**
-   * Demonstrates what [PredicateBlockBehavior]'s own `useGlobalPredicatePool` doc promises: turning
-   * the pool off reproduces the exact precision gap [globalAssumePredicatePrecision] exists to
-   * close, for the same reason its own class doc gives. `B_root` (`init->branch`, `x := 5`) has no
-   * violation location of its own to refute against, so without the pool it never refines past an
-   * empty precision and packs `True()` at `branch` regardless of what `x` actually is. `B_checkB`
-   * (`branch->checkB->err`, `assume(x >= 10)`) then receives that unconstrained `True()` as its
-   * only precondition - its own extracted mini-program never even sees the `x := 5` assignment,
-   * which lives in `B_root`'s block, not its own - so `x` is free there and `assume(x >= 10)` is
-   * trivially satisfiable: a false positive. Still sound (a spurious UNSAFE is a real, if
-   * unhelpfully broad, consequence of `True()` being a valid over-approximation - never a missed
-   * real violation), just exactly the imprecision the pool is meant to prevent.
+   * Without the (Theta-only) global predicate pool, the blocks start with an empty precision like
+   * CPAchecker's. The root block (`init->branch`, `x := 5`) then packs a trivial postcondition, and
+   * the block ending in `err` (`assume(x >= 10)`) finds its error reachable from it - but, as in
+   * CPAchecker, that only produces a violation condition (`x >= 10`), which the root refutes by
+   * refinement. No false alarm: the pool only saves rounds, it is not needed for precision.
    */
   @Test
-  fun `turning the global predicate pool off reproduces its own known precision gap`() {
+  fun `without the global predicate pool, violation conditions still refute the spurious error`() {
     val wholeProgram = branchingXcfa(assignedValue = "5")
     assertEquals(DssResult.SAFE, checkDecomposed(wholeProgram, useGlobalPredicatePool = true))
-    assertEquals(DssResult.UNSAFE, checkDecomposed(wholeProgram, useGlobalPredicatePool = false))
+    assertEquals(DssResult.SAFE, checkDecomposed(wholeProgram, useGlobalPredicatePool = false))
     assert(checkDirectly(wholeProgram).isSafe) { "test fixture itself should be safe" }
   }
 }

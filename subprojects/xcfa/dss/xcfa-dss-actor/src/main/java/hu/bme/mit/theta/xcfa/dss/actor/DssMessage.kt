@@ -16,10 +16,15 @@
 package hu.bme.mit.theta.xcfa.dss.actor
 
 import hu.bme.mit.theta.core.type.Expr
+import hu.bme.mit.theta.core.type.booltype.BoolExprs.Or
 import hu.bme.mit.theta.core.type.booltype.BoolType
+import java.util.concurrent.atomic.AtomicLong
+
+private val sequence = AtomicLong()
 
 /**
- * Mirrors CPAchecker's confirmed `DssMessage.DssMessageType` - five types, not the paper's three.
+ * Mirrors CPAchecker's `DssMessage.DssMessageType` - five types; the paper only describes the two
+ * analysis messages (`post`, `vcond`).
  */
 enum class DssMessageType {
   POST_CONDITION,
@@ -35,18 +40,20 @@ enum class DssResult {
 }
 
 /**
- * A message exchanged between [DssActor]s. Mirrors CPAchecker's `DssMessage` hierarchy, confirmed
- * to have five subtypes (plan §2), not the paper's three.
+ * A message exchanged between [DssActor]s. Mirrors CPAchecker's `DssMessage` hierarchy, which has
+ * five subtypes (the paper only describes the two analysis messages, `post` and `vcond`).
  *
- * `POST_CONDITION`/`VIOLATION_CONDITION` carry an optional [Expr] payload - the packed boolean
- * formula from `xcfa-dss-analysis`'s `packPostcondition` (plan §3's `packPost`). Optional (not
- * required) so the stub workers this module was originally validated against (`EchoBlockAnalysis`,
- * plan step 4) keep compiling unchanged; a real [DssBlockBehavior] (e.g. `PredicateBlockBehavior`,
- * build-order step 5) always sets it.
+ * The analysis payloads are optional so the stub behaviors this runtime was validated against
+ * (`EchoBlockAnalysis`) can send bare messages; [PredicateBlockBehavior] always fills them in.
  */
 sealed class DssMessage {
 
   abstract val senderId: String
+
+  /**
+   * Creation order of messages, used by [newDssMessageQueue] to keep equal-priority messages FIFO.
+   */
+  val sequenceNumber: Long = sequence.getAndIncrement()
 
   val type: DssMessageType
     get() =
@@ -59,11 +66,51 @@ sealed class DssMessage {
       }
 }
 
+/**
+ * A postcondition, CPAchecker's `DssPostConditionMessage`. Like CPAchecker, one message can carry
+ * several abstract states ([postconditions], each a formula over the program variables at the
+ * sender's block exit; their disjunction is the postcondition), the precision the sender used
+ * ([precision], CPAchecker serializes the `PredicatePrecision` with every state), and whether the
+ * states were computed while the sender had a non-trivial precondition from each of its own
+ * predecessors ([nonTrivialForEachPredecessor], CPAchecker's
+ * `BlockState.hasNonTrivialSummaryForEachPredecessor`, used for the strongly-connected-component
+ * handling of the paper).
+ */
 data class DssPostConditionMessage(
   override val senderId: String,
-  val postcondition: Expr<BoolType>? = null,
-) : DssMessage()
+  val postconditions: List<Expr<BoolType>> = emptyList(),
+  val precision: Set<Expr<BoolType>> = emptySet(),
+  val nonTrivialForEachPredecessor: Boolean = false,
+  /**
+   * For each of [postconditions], whether it was computed (transitively) from a top start state of
+   * a non-root block - Theta's extension of the SCC flag, see `PredicateBlockBehavior`. Missing
+   * entries count as `false`.
+   */
+  val derivedFromTop: List<Boolean> = emptyList(),
+) : DssMessage() {
 
+  constructor(
+    senderId: String,
+    postcondition: Expr<BoolType>,
+  ) : this(senderId, listOf(postcondition))
+
+  /** The disjunction of [postconditions], or `null` for a bare (stub) message. */
+  val postcondition: Expr<BoolType>?
+    get() =
+      when (postconditions.size) {
+        0 -> null
+        1 -> postconditions.single()
+        else -> Or(postconditions)
+      }
+}
+
+/**
+ * A violation condition, CPAchecker's `DssViolationConditionMessage`: a formula over the program
+ * variables at the entry of the sender's block (plus existentially quantified auxiliary variables,
+ * see `DssAuxVars`) from which a specification violation is reachable. CPAchecker combines the
+ * conditions of one block at the same program location into one state (`combineVcsByHash`), so a
+ * message carries a single, possibly disjunctive, condition.
+ */
 data class DssViolationConditionMessage(
   override val senderId: String,
   val violationCondition: Expr<BoolType>? = null,

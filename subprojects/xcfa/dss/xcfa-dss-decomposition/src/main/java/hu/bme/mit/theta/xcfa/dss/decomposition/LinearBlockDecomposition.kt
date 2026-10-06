@@ -69,7 +69,7 @@ class LinearBlockDecomposition(
       if (isBlockEnd(edge.target)) {
         blocks.add(
           Block(
-            id = "B${nextId++}",
+            id = "L${nextId++}",
             initialLocation = chain.initialLocation,
             finalLocation = edge.target,
             locations = chain.locations,

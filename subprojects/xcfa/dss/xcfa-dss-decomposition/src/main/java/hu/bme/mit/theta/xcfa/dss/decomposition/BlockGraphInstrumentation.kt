@@ -45,10 +45,12 @@ import hu.bme.mit.theta.xcfa.model.XcfaProcedure
  * over: a block ending in a genuine dead end (no outgoing edges at all, e.g. the procedure's
  * `final`/`error` location) gets no ghost edge, since no successor block is ever waiting on a
  * summary from there - [Block.isAbstractionPossible] is `false` for such blocks. The exclusions
- * CPAchecker applies for call-site and main-entry locations are *not* ported yet (see
- * dss-in-theta-plan.md's open questions): XCFA's call model differs enough from CPAchecker's CFA (a
- * single edge carrying an `InvokeLabel`, not separate call/summary/return edges) that porting that
- * nuance needs its own investigation once the per-block analysis adapter (plan §3) is built.
+ * CPAchecker applies for call-site and main-entry locations are not ported: DSS in Theta works on a
+ * single procedure, where a call is one edge with an `InvokeLabel`. As in CPAchecker, a graph with
+ * a single block is left unchanged.
+ *
+ * The DSS pipeline of `xcfa-cli` does not run this: the block analysis extracts every block into
+ * its own XCFA, where the block exit is a private location already (see `doc/DSS.md`).
  *
  * Must run after decomposition, on that decomposition's own result - re-decomposing an already
  * instrumented procedure is not supported (the ghost edges would be picked up as ordinary CFG
@@ -63,6 +65,10 @@ object BlockGraphInstrumentation {
   data class Modification(val procedure: XcfaProcedure, val blockGraph: BlockGraph)
 
   fun instrumentForAbstraction(procedure: XcfaProcedure, blockGraph: BlockGraph): Modification {
+    // CPAchecker's BlockGraphModification.instrumentCFA leaves a single-block graph unchanged.
+    if (blockGraph.blocks.size == 1) {
+      return Modification(procedure, blockGraph)
+    }
     val ghostEdgeByFinalLocation = mutableMapOf<XcfaLocation, XcfaEdge>()
 
     for (finalLocation in blockGraph.blocks.map(Block::finalLocation).toSet()) {

@@ -252,18 +252,41 @@ data class DssConfig(
     names = ["--dss-decomposition"],
     description = "How to decompose the input procedure into DSS blocks",
   )
-  var decomposition: DssDecomposition = DssDecomposition.LINEAR,
+  var decomposition: DssDecomposition = DssDecomposition.MERGE,
   @Parameter(
     names = ["--dss-target-block-count"],
-    description = "Target block count for --dss-decomposition MERGE; ignored otherwise",
+    description =
+      "Target block count for --dss-decomposition MERGE; ignored otherwise (CPAchecker's " +
+        "hardcoded value is 2)",
   )
-  var targetBlockCount: Int = 10,
+  var targetBlockCount: Int = 2,
+  @Parameter(
+    names = ["--dss-largest-horizontal-merge"],
+    description =
+      "Horizontally merge a group of parallel blocks only if at most one of them has more " +
+        "locations than this; -1 disables the limit (CPAchecker's largestHorizontalMerge)",
+  )
+  var largestHorizontalMerge: Int = -1,
+  @Parameter(
+    names = ["--dss-allow-single-block-decomposition"],
+    description =
+      "With --dss-decomposition MERGE and a target of at most one block, use a single block " +
+        "(CPAchecker's allowSingleBlockDecompositionWhenMerging)",
+  )
+  var allowSingleBlockDecomposition: Boolean = false,
+  @Parameter(
+    names = ["--dss-reset-precision"],
+    description =
+      "Start every block analysis with the initial precision instead of the precision received " +
+        "with the preconditions (CPAchecker's resetPrecisionForEveryRun)",
+  )
+  var resetPrecisionForEveryRun: Boolean = false,
   @Parameter(names = ["--dss-executor"], description = "Which DSS actor-runtime driver to use")
   var executor: DssExecutor = DssExecutor.CONCURRENT,
   @Parameter(
     names = ["--dss-global-predicate-pool"],
     description =
-      "Seed every block's initial precision from the whole program's own assume conditions, not just that block's own edges (default: on). Off reproduces DSS's original precision gap - see doc/DSS-analysis.md.",
+      "Seed every block's initial precision with every assume condition of the whole program (default: on). Theta-specific, CPAchecker starts with an empty precision - see doc/DSS.md.",
     // JCommander defaults a Boolean @Parameter to arity 0 (bare presence = true, no way to pass an
     // explicit "false" - fine for every other Boolean flag in this file, which all default false
     // and only ever need turning *on*). This one defaults true and needs to be turned *off* from
@@ -282,8 +305,7 @@ data class DssConfig(
         "(BMC/KIND/IMC/KINDIMC/BOUNDED) are built via getBoundedChecker with the matching " +
         "--backend preset and do NOT consume that seed (they run on UnitPrec, not XcfaPrec, so " +
         "there is nothing to seed it into). Every block draws its checker for each recheck from " +
-        "this same shared roster, chosen by --dss-checker-selection - see doc/DSS-analysis.md's " +
-        "DssCheckerRoster section.",
+        "this same shared roster, chosen by --dss-checker-selection - see doc/DSS.md.",
   )
   var checkerBackends: List<DssCheckerBackend> = listOf(DssCheckerBackend.CEGAR_PRED_CART),
   @Parameter(
