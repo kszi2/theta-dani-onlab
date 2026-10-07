@@ -69,7 +69,7 @@ DSS works on programs with a single XCFA procedure (the CLI rejects others).
 | `--dss-executor {SEQUENTIAL,CONCURRENT}` | `SEQUENTIAL` | Actor driver | `executorType` (`DSS`, i.e. concurrent, by default) |
 | `--dss-solver NAME` | `Z3` | Solver of the block checkers and of DSS's own SMT checks | the solver of the PredicateCPA (MathSAT5) |
 | `--dss-global-predicate-pool BOOL` | `true` | Seed every block's precision with all assume conditions of the program | none (similar in effect to `performInitialStaticRefinement`, see 11.4) |
-| `--dss-checker-backends LIST` | `CEGAR_PRED_BOOL` | Checkers used for block analyses (CEGAR with a predicate domain, or bounded model checkers) | none (always the predicate CPA) |
+| `--dss-checker-backends LIST` | `CEGAR_PRED_CART` | Checkers used for block analyses (CEGAR with a predicate domain, or bounded model checkers) | none (always the predicate CPA) |
 | `--dss-checker-selection ROUND_ROBIN` | `ROUND_ROBIN` | How a checker is picked from that list for every block analysis | none |
 
 **Why the executor defaults to `SEQUENTIAL`.** Theta's default solver binding (`Z3`, the "legacy"
@@ -308,7 +308,7 @@ method names follow CPAchecker's.
 
 | Field | Meaning |
 |---|---|
-| `preconditions: senderId -> [Summary]` | received postconditions (CPAchecker's multimap); a `Summary` is a state, its precision and the SCC flag |
+| `preconditions: senderId -> [Summary]` | received postconditions (CPAchecker's multimap); a `Summary` is a state, its precision, the SCC flag and the "derived from top" flag |
 | `violationConditions: senderId -> [condition]` | the last violation condition of every successor |
 | `relevant` | the start states the next `analyzePrecondition` analyzes |
 | `containsViolationInsideBlock` | the block's own error location is reachable (set by the initial analysis) |
@@ -381,13 +381,18 @@ root only reports satisfiable violation conditions; one that arrives means UNSAF
 The paper does not join the initial (top) postconditions of predecessors in the same SCC, because
 otherwise a loop block could never become more precise than top. CPAchecker implements this with a
 flag on every summary ("computed while every predecessor had a non-trivial precondition") and skips
-flagged top states once every predecessor provided a non-trivial state. Theta does the same.
-The rule only recognizes the initial state if a summary computed from it is literally top, so the
-block checkers default to boolean predicate abstraction (`CEGAR_PRED_BOOL`), which - like
-CPAchecker's canonical abstraction - keeps exact boolean combinations of the predicates. Cartesian
-abstraction (`CEGAR_PRED_CART`) can turn a summary computed from top into a coarse non-top state
-(e.g. a loop entry that forgot `x == z`), which the rule does not skip and which can then sustain
-itself around a loop (11.5).
+flagged top states once every predecessor provided a non-trivial state. Theta does the same, and
+additionally marks every summary computed (transitively) from a top start state of a non-root
+block as **derived from top**: once every predecessor provided a state that is neither top nor
+derived, derived states are skipped too (11.5). A derived state never replaces or covers a
+non-derived one, so skipping it cannot remove information that only it carried.
+
+The extension is needed with every predicate domain Theta offers, not only Cartesian abstraction:
+without it, `paper_true` of section 12 no longer terminates with `CEGAR_PRED_BOOL` either (it is
+proved safe in about 2 s with it). Boolean abstraction is not more effective than Cartesian on
+section 12's programs either: with the extension, both solve all of them with default unrolling;
+with `--unroll 0`, Cartesian solves 12 and Boolean 11 (it times out on `two_loops_true`), and
+Boolean is mostly slower. So the default stays `CEGAR_PRED_CART`.
 
 ### 7.8 Start state order
 
@@ -398,7 +403,7 @@ first would cover, and thus deduplicate away, every other summary of the same an
 
 ### 8.1 Messages
 
-`POST_CONDITION` (`DssPostConditionMessage`: states, precision, SCC flag),
+`POST_CONDITION` (`DssPostConditionMessage`: states, precision, SCC flag, derived-from-top flags),
 `VIOLATION_CONDITION` (`DssViolationConditionMessage`: one, possibly disjunctive, condition),
 `RESULT` (`SAFE`/`UNSAFE`), `EXCEPTION` (the `Throwable`), `STATISTIC`. Messages are in-memory
 objects.
@@ -445,8 +450,8 @@ target, but never invent one.)
 target, or that its violation condition was refuted further up. This is sound as long as the
 analyzed preconditions cover the reachable entry states. Missing predecessors count as top, and
 stored states are only replaced by stronger states of the same sender, which keeps them covering -
-with one caveat inherited from CPAchecker: the SCC rule skips top start states once non-trivial
-states exist, relying on those being the
+with one caveat inherited from CPAchecker: the SCC rule skips top start states (and Theta's
+extension skips states derived from top) once non-trivial states exist, relying on those being the
 fixed point of the component. This is the paper's argument ("we can only find valid proofs if all
 postconditions in the SCC reached a fixed point"); the implementation does not check it.
 
@@ -517,7 +522,8 @@ condition, which can grow exponentially; `MERGE` folds such branches into one bl
    repeated conditions are recognized by structural equality instead of `ViolationWitness`
    equality.
 7. **Messages are objects** - no serialization. Precision and the SCC flag are per message where
-   CPAchecker serializes them per state (one analysis attaches the same values to all its states).
+   CPAchecker serializes them per state (one analysis attaches the same values to all its states);
+   the derived-from-top flag is per state.
 
 ### 11.2 Precision
 
@@ -560,10 +566,12 @@ condition, which can grow exponentially; `MERGE` folds such branches into one bl
    valid; Theta's packed cube disjunctions are not. Without the normalization the SCC rule never
    fired for a loop body that branches on a nondeterministic value.
 2. **Start state order:** non-top first (7.8).
-3. **Boolean predicate abstraction by default** (7.7). The SCC rule needs summaries computed from
-   top to be top. With Cartesian abstraction (and the pool) they can be coarse non-top states
-   instead, which sustain themselves around the loop and keep re-deriving ever longer violation
-   conditions; `CEGAR_PRED_CART` is still available, but without a workaround for this.
+3. **Derived-from-top states** are skipped like flagged top states (7.7). With CPAchecker's empty
+   initial precision, summaries computed from top are typically literally top; Theta's Cartesian
+   abstraction (and the pool) produce coarse non-top states instead - e.g. a loop entry that forgot
+   `x == z` because it was analyzed from top - which then sustain themselves around the loop and
+   keep re-deriving ever longer violation conditions. Boolean abstraction does not make the
+   extension unnecessary (7.7).
 4. **"The same vc must have been sent already"** is checked, not assumed. CPAchecker's
    `analyzePrecondition` does not report a violation condition reached from the top state when
    other start states are analyzed too. That loses the condition if it arrived while the block had

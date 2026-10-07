@@ -314,7 +314,7 @@ data class DssConfig(
     description =
       "Comma-separated list of backends to build DSS's checker-roster factories from; the " +
         "list's length is the roster size (repeat a name for more than one of a kind, e.g. " +
-        "CEGAR_PRED_BOOL,CEGAR_PRED_BOOL,BMC). CEGAR_PRED_CART/CEGAR_PRED_BOOL/CEGAR_PRED_SPLIT " +
+        "CEGAR_PRED_CART,CEGAR_PRED_CART,BMC). CEGAR_PRED_CART/CEGAR_PRED_BOOL/CEGAR_PRED_SPLIT " +
         "are getCegarChecker with the matching Domain, all three still consuming " +
         "--dss-global-predicate-pool's precision seed same as always; the bounded-family entries " +
         "(BMC/KIND/IMC/KINDIMC/BOUNDED) are built via getBoundedChecker with the matching " +
@@ -322,7 +322,7 @@ data class DssConfig(
         "there is nothing to seed it into). Every block draws its checker for each recheck from " +
         "this same shared roster, chosen by --dss-checker-selection - see doc/DSS.md.",
   )
-  var checkerBackends: List<DssCheckerBackend> = listOf(DssCheckerBackend.CEGAR_PRED_BOOL),
+  var checkerBackends: List<DssCheckerBackend> = listOf(DssCheckerBackend.CEGAR_PRED_CART),
   @Parameter(
     names = ["--dss-checker-selection"],
     description = "Policy DssCheckerRoster uses to pick a checker factory on each recheck",

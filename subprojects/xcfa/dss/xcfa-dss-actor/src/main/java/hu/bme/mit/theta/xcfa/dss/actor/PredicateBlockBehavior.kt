@@ -79,11 +79,14 @@ const val DEFAULT_DSS_SOLVER = "Z3"
  * paper ("prevent postconditions of predecessors in the same component from being joined unless
  * they are unequal to the initial state") is CPAchecker's: once every predecessor provided a
  * non-trivial state, top states that were themselves computed from non-trivial preconditions are
- * skipped. This relies on the block checkers using boolean predicate abstraction
- * (`Domain.PRED_BOOL`, the DSS default): like CPAchecker's canonical abstraction, it keeps the
- * exact boolean combination of the predicates, so a summary computed from the initial state is
- * literally top unless the block itself constrains its exit. Cartesian abstraction can instead
- * produce coarse non-top summaries from top that the rule does not recognize.
+ * skipped. Theta extends this to states that are not top but were computed (transitively) from a
+ * top start state of a non-root block: once every predecessor provided a state not derived from
+ * top, such states are skipped too. With CPAchecker's canonical abstraction and initially empty
+ * precision, such summaries are typically literally top; Theta's Cartesian predicate abstraction
+ * (and the global predicate pool) produces coarse non-top states instead - e.g. a loop entry that
+ * forgot an invariant like `x == z` because it was analyzed from top - which would otherwise
+ * sustain themselves around a cycle of the block graph and keep re-deriving violation conditions
+ * forever.
  *
  * Precision: like CPAchecker, the predicates a block used are transmitted with its postconditions,
  * and a block analyzes non-top start states with the combination of the precisions it received
@@ -111,10 +114,15 @@ class PredicateBlockBehavior(
     val state: Expr<BoolType>,
     val precision: Set<Expr<BoolType>>,
     val nonTrivialForEachPredecessor: Boolean = false,
+    /** Computed (transitively) from a top start state of a non-root block, see the class doc. */
+    val derivedFromTop: Boolean = false,
   ) {
     /** CPAchecker's `isMostGeneralBlockEntryState` for predicate states. */
     val isTop: Boolean
       get() = state == True()
+
+    /** Whether this state may take the place of [other] when it covers it. */
+    fun mayReplace(other: Summary): Boolean = !derivedFromTop || other.derivedFromTop
   }
 
   private sealed interface RunResult {
@@ -163,7 +171,9 @@ class PredicateBlockBehavior(
       is RunResult.Safe ->
         if (result.postcondition == False()) emptyList()
         else
-          reportPostconditions(listOf(Summary(result.postcondition, result.precision)))
+          reportPostconditions(
+            listOf(Summary(result.postcondition, result.precision, derivedFromTop = !block.isRoot))
+          )
       RunResult.Unsafe -> {
         containsViolationInsideBlock = true
         buildList {
@@ -186,8 +196,13 @@ class PredicateBlockBehavior(
   fun storePrecondition(message: DssPostConditionMessage): Boolean {
     relevant.clear()
     val received =
-      message.postconditions.map { state ->
-        Summary(state, message.precision, message.nonTrivialForEachPredecessor)
+      message.postconditions.mapIndexed { i, state ->
+        Summary(
+          state,
+          message.precision,
+          message.nonTrivialForEachPredecessor,
+          message.derivedFromTop.getOrElse(i) { false },
+        )
       }
     val sender = message.senderId
     val stored = preconditions[sender]
@@ -200,7 +215,9 @@ class PredicateBlockBehavior(
     for (new in received) {
       var isRelevant = true
       for (old in stored.toList()) {
-        if (operators.isSubsumed(new.state, old.state)) {
+        // A state derived from top may be skipped later (see the class doc), so it must not
+        // replace a state that is not.
+        if (new.mayReplace(old) && operators.isSubsumed(new.state, old.state)) {
           stored.remove(old)
         }
         if (isRelevant && operators.isSubsumed(old.state, new.state)) {
@@ -280,6 +297,9 @@ class PredicateBlockBehavior(
 
     val hasNonTrivialSummariesForEachPredecessor =
       preconditions.isNotEmpty() && preconditions.values.all { states -> states.any { !it.isTop } }
+    val hasUnderivedSummariesForEachPredecessor =
+      preconditions.isNotEmpty() &&
+        preconditions.values.all { states -> states.any { !it.isTop && !it.derivedFromTop } }
 
     val startStates = linkedSetOf<Summary>()
     if (checkOnlyRelevant) {
@@ -291,6 +311,10 @@ class PredicateBlockBehavior(
             state.nonTrivialForEachPredecessor &&
             state.isTop
         ) {
+          continue
+        }
+        // Theta-specific generalization of the rule above to non-top states derived from top.
+        if (hasUnderivedSummariesForEachPredecessor && state.derivedFromTop) {
           continue
         }
         startStates.add(state)
@@ -332,6 +356,7 @@ class PredicateBlockBehavior(
                 result.postcondition,
                 result.precision,
                 hasNonTrivialSummariesForEachPredecessor,
+                derivedFromTop(start),
               )
           }
         }
@@ -346,6 +371,7 @@ class PredicateBlockBehavior(
                 summary.postcondition,
                 summary.precision,
                 hasNonTrivialSummariesForEachPredecessor,
+                derivedFromTop(start),
               )
           }
           targetReached = true
@@ -380,6 +406,10 @@ class PredicateBlockBehavior(
       targets.takeIf { it.isNotEmpty() }?.let { computeViolationCondition(block, it) }
     return AnalysisResult(summaries, newViolationCondition)
   }
+
+  /** The root's top start state is the real program entry, so nothing it computes is derived. */
+  private fun derivedFromTop(start: Summary): Boolean =
+    !block.isRoot && (start.isTop || start.derivedFromTop)
 
   private fun targetsOfOwnViolations(): Map<XcfaLocation, Expr<BoolType>> =
     ownTargets.associateWith { True() }
@@ -434,16 +464,20 @@ class PredicateBlockBehavior(
         unique.map { it.state },
         unique.flatMapTo(linkedSetOf()) { it.precision },
         unique.any { it.nonTrivialForEachPredecessor },
+        unique.map { it.derivedFromTop },
       )
     )
   }
 
-  /** CPAchecker's `deduplicateStates`: drop every state covered by a state kept before it. */
+  /**
+   * CPAchecker's `deduplicateStates`: drop every state covered by a state kept before it - except
+   * that a state derived from top never covers one that is not (it may be skipped by the receiver).
+   */
   private fun deduplicateStates(summaries: List<Summary>): List<Summary> {
     if (summaries.size < 2) return summaries
     val kept = mutableListOf<Summary>()
-    for (summary in summaries) {
-      if (kept.none { operators.isSubsumed(summary.state, it.state) }) {
+    for (summary in summaries.sortedBy { it.derivedFromTop }) {
+      if (kept.none { it.mayReplace(summary) && operators.isSubsumed(summary.state, it.state) }) {
         kept += summary
       }
     }

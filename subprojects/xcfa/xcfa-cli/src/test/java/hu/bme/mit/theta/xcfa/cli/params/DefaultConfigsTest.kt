@@ -27,7 +27,7 @@ class DefaultConfigsTest {
 
     assertEquals(Backend.CEGAR, config.backendConfig.backend)
     val cegarConfig = assertInstanceOf(CegarConfig::class.java, config.backendConfig.specConfig)
-    assertEquals(Domain.PRED_BOOL, cegarConfig.abstractorConfig.domain)
+    assertEquals(Domain.PRED_CART, cegarConfig.abstractorConfig.domain)
   }
 
   @Test
@@ -38,7 +38,7 @@ class DefaultConfigsTest {
     (first.backendConfig.specConfig as CegarConfig).abstractorConfig.domain = Domain.PRED_SPLIT
 
     assertEquals(
-      Domain.PRED_BOOL,
+      Domain.PRED_CART,
       (second.backendConfig.specConfig as CegarConfig).abstractorConfig.domain,
     )
   }
