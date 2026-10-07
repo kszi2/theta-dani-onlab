@@ -40,6 +40,15 @@ import hu.bme.mit.theta.xcfa.model.XcfaLocation
 import hu.bme.mit.theta.xcfa.model.XcfaProcedure
 
 /**
+ * The solver DSS uses by default: Theta's default (legacy) Z3 binding, whose native interpolation
+ * handles the integer arithmetic of C programs. It must not be used by several threads at once (it
+ * crashes natively in `solverAssert`, even with one context per block analysis), so the concurrent
+ * executor needs `Z3:new` - whose Horn-based interpolation, however, fails on some C arithmetic.
+ * See `doc/DSS.md`.
+ */
+const val DEFAULT_DSS_SOLVER = "Z3"
+
+/**
  * The block analysis of DSS with predicate abstraction: a port of CPAchecker's `DssBlockAnalysis`
  * (driven the way CPAchecker's `DssAnalysisWorker.processMessage` drives it), on top of an ordinary
  * Theta checker that analyzes the block extracted into a standalone XCFA ([extractBlockXcfa]).
@@ -70,14 +79,11 @@ import hu.bme.mit.theta.xcfa.model.XcfaProcedure
  * paper ("prevent postconditions of predecessors in the same component from being joined unless
  * they are unequal to the initial state") is CPAchecker's: once every predecessor provided a
  * non-trivial state, top states that were themselves computed from non-trivial preconditions are
- * skipped. Theta extends this to states that are not top but were computed (transitively) from a
- * top start state of a non-root block: once every predecessor provided a state not derived from
- * top, such states are skipped too. With CPAchecker's canonical abstraction and initially empty
- * precision, such summaries are typically literally top; Theta's Cartesian predicate abstraction
- * (and the global predicate pool) produces coarse non-top states instead - e.g. a loop entry that
- * forgot an invariant like `x == z` because it was analyzed from top - which would otherwise
- * sustain themselves around a cycle of the block graph and keep re-deriving violation conditions
- * forever.
+ * skipped. This relies on the block checkers using boolean predicate abstraction
+ * (`Domain.PRED_BOOL`, the DSS default): like CPAchecker's canonical abstraction, it keeps the
+ * exact boolean combination of the predicates, so a summary computed from the initial state is
+ * literally top unless the block itself constrains its exit. Cartesian abstraction can instead
+ * produce coarse non-top summaries from top that the rule does not recognize.
  *
  * Precision: like CPAchecker, the predicates a block used are transmitted with its postconditions,
  * and a block analyzes non-top start states with the combination of the precisions it received
@@ -88,7 +94,7 @@ import hu.bme.mit.theta.xcfa.model.XcfaProcedure
  *
  * [checkerRoster] supplies the checker of every single analysis run (default: round-robin over the
  * configured checkers). [solverFactory] is used for the coverage and satisfiability checks of the
- * predicate operators; `null` resolves Theta's default `Z3` solver.
+ * predicate operators; `null` resolves [DEFAULT_DSS_SOLVER].
  */
 class PredicateBlockBehavior(
   private val wholeProgram: XCFA,
@@ -105,8 +111,6 @@ class PredicateBlockBehavior(
     val state: Expr<BoolType>,
     val precision: Set<Expr<BoolType>>,
     val nonTrivialForEachPredecessor: Boolean = false,
-    /** Computed (transitively) from a top start state of a non-root block, see the class doc. */
-    val derivedFromTop: Boolean = false,
   ) {
     /** CPAchecker's `isMostGeneralBlockEntryState` for predicate states. */
     val isTop: Boolean
@@ -126,7 +130,7 @@ class PredicateBlockBehavior(
   )
 
   private val operators by lazy {
-    DssPredicateOperators(solverFactory ?: SolverManager.resolveSolverFactory("Z3"))
+    DssPredicateOperators(solverFactory ?: SolverManager.resolveSolverFactory(DEFAULT_DSS_SOLVER))
   }
 
   private val startPrecision: Set<Expr<BoolType>> by lazy {
@@ -159,9 +163,7 @@ class PredicateBlockBehavior(
       is RunResult.Safe ->
         if (result.postcondition == False()) emptyList()
         else
-          reportPostconditions(
-            listOf(Summary(result.postcondition, result.precision, derivedFromTop = !block.isRoot))
-          )
+          reportPostconditions(listOf(Summary(result.postcondition, result.precision)))
       RunResult.Unsafe -> {
         containsViolationInsideBlock = true
         buildList {
@@ -184,13 +186,8 @@ class PredicateBlockBehavior(
   fun storePrecondition(message: DssPostConditionMessage): Boolean {
     relevant.clear()
     val received =
-      message.postconditions.mapIndexed { i, state ->
-        Summary(
-          state,
-          message.precision,
-          message.nonTrivialForEachPredecessor,
-          message.derivedFromTop.getOrElse(i) { false },
-        )
+      message.postconditions.map { state ->
+        Summary(state, message.precision, message.nonTrivialForEachPredecessor)
       }
     val sender = message.senderId
     val stored = preconditions[sender]
@@ -283,9 +280,6 @@ class PredicateBlockBehavior(
 
     val hasNonTrivialSummariesForEachPredecessor =
       preconditions.isNotEmpty() && preconditions.values.all { states -> states.any { !it.isTop } }
-    val hasUnderivedSummariesForEachPredecessor =
-      preconditions.isNotEmpty() &&
-        preconditions.values.all { states -> states.any { !it.isTop && !it.derivedFromTop } }
 
     val startStates = linkedSetOf<Summary>()
     if (checkOnlyRelevant) {
@@ -297,10 +291,6 @@ class PredicateBlockBehavior(
             state.nonTrivialForEachPredecessor &&
             state.isTop
         ) {
-          continue
-        }
-        // Theta-specific generalization of the rule above to non-top states derived from top.
-        if (hasUnderivedSummariesForEachPredecessor && state.derivedFromTop) {
           continue
         }
         startStates.add(state)
@@ -342,7 +332,6 @@ class PredicateBlockBehavior(
                 result.postcondition,
                 result.precision,
                 hasNonTrivialSummariesForEachPredecessor,
-                derivedFromTop(start),
               )
           }
         }
@@ -357,14 +346,12 @@ class PredicateBlockBehavior(
                 summary.postcondition,
                 summary.precision,
                 hasNonTrivialSummariesForEachPredecessor,
-                derivedFromTop(start),
               )
           }
           targetReached = true
           // CPAchecker: "For trivial states, the same vc must have been sent already." That does
-          // not
-          // hold if the violation condition arrived while this block had no precondition yet (then
-          // it was not analyzed at all), so here it is checked instead of assumed.
+          // not hold if the violation condition arrived while this block had no precondition yet
+          // (then it was not analyzed at all), so here it is checked instead of assumed.
           if (
             violations.isNotEmpty() &&
               (!checkOnlyRelevant ||
@@ -393,10 +380,6 @@ class PredicateBlockBehavior(
       targets.takeIf { it.isNotEmpty() }?.let { computeViolationCondition(block, it) }
     return AnalysisResult(summaries, newViolationCondition)
   }
-
-  /** The root's top start state is the real program entry, so nothing it computes is derived. */
-  private fun derivedFromTop(start: Summary): Boolean =
-    !block.isRoot && (start.isTop || start.derivedFromTop)
 
   private fun targetsOfOwnViolations(): Map<XcfaLocation, Expr<BoolType>> =
     ownTargets.associateWith { True() }
@@ -451,7 +434,6 @@ class PredicateBlockBehavior(
         unique.map { it.state },
         unique.flatMapTo(linkedSetOf()) { it.precision },
         unique.any { it.nonTrivialForEachPredecessor },
-        unique.map { it.derivedFromTop },
       )
     )
   }
@@ -461,7 +443,9 @@ class PredicateBlockBehavior(
     if (summaries.size < 2) return summaries
     val kept = mutableListOf<Summary>()
     for (summary in summaries) {
-      if (kept.none { operators.isSubsumed(summary.state, it.state) }) kept += summary
+      if (kept.none { operators.isSubsumed(summary.state, it.state) }) {
+        kept += summary
+      }
     }
     return kept
   }

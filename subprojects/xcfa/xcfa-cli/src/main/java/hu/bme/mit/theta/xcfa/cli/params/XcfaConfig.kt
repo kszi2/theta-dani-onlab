@@ -32,6 +32,7 @@ import hu.bme.mit.theta.xcfa.analysis.oc.AutoConflictFinderConfig
 import hu.bme.mit.theta.xcfa.analysis.oc.OcDecisionProcedureType
 import hu.bme.mit.theta.xcfa.analysis.oc.XcfaOcMemoryConsistencyModel
 import hu.bme.mit.theta.xcfa.cli.utils.StringToXcfaPropertyConverter
+import hu.bme.mit.theta.xcfa.dss.actor.DEFAULT_DSS_SOLVER
 import hu.bme.mit.theta.xcfa.model.XCFA
 import hu.bme.mit.theta.xcfa.passes.LbePass
 import hu.bme.mit.theta.xcfa.passes.LoopUnrollPass
@@ -281,8 +282,22 @@ data class DssConfig(
         "with the preconditions (CPAchecker's resetPrecisionForEveryRun)",
   )
   var resetPrecisionForEveryRun: Boolean = false,
-  @Parameter(names = ["--dss-executor"], description = "Which DSS actor-runtime driver to use")
-  var executor: DssExecutor = DssExecutor.CONCURRENT,
+  @Parameter(
+    names = ["--dss-solver"],
+    description =
+      "Solver of the CEGAR block checkers (abstraction and refinement) and of DSS's own coverage " +
+        "and satisfiability checks. The default (legacy) Z3 is not safe for --dss-executor " +
+        "CONCURRENT; Z3:new is, but its interpolation fails on some C arithmetic - see doc/DSS.md",
+  )
+  var solver: String = DEFAULT_DSS_SOLVER,
+  @Parameter(
+    names = ["--dss-executor"],
+    description =
+      "Which DSS actor-runtime driver to use. SEQUENTIAL by default (CPAchecker's default is " +
+        "concurrent): the default solver (Z3) crashes when used by several threads; use " +
+        "CONCURRENT together with --dss-solver Z3:new",
+  )
+  var executor: DssExecutor = DssExecutor.SEQUENTIAL,
   @Parameter(
     names = ["--dss-global-predicate-pool"],
     description =
@@ -299,7 +314,7 @@ data class DssConfig(
     description =
       "Comma-separated list of backends to build DSS's checker-roster factories from; the " +
         "list's length is the roster size (repeat a name for more than one of a kind, e.g. " +
-        "CEGAR_PRED_CART,CEGAR_PRED_CART,BMC). CEGAR_PRED_CART/CEGAR_PRED_BOOL/CEGAR_PRED_SPLIT " +
+        "CEGAR_PRED_BOOL,CEGAR_PRED_BOOL,BMC). CEGAR_PRED_CART/CEGAR_PRED_BOOL/CEGAR_PRED_SPLIT " +
         "are getCegarChecker with the matching Domain, all three still consuming " +
         "--dss-global-predicate-pool's precision seed same as always; the bounded-family entries " +
         "(BMC/KIND/IMC/KINDIMC/BOUNDED) are built via getBoundedChecker with the matching " +
@@ -307,7 +322,7 @@ data class DssConfig(
         "there is nothing to seed it into). Every block draws its checker for each recheck from " +
         "this same shared roster, chosen by --dss-checker-selection - see doc/DSS.md.",
   )
-  var checkerBackends: List<DssCheckerBackend> = listOf(DssCheckerBackend.CEGAR_PRED_CART),
+  var checkerBackends: List<DssCheckerBackend> = listOf(DssCheckerBackend.CEGAR_PRED_BOOL),
   @Parameter(
     names = ["--dss-checker-selection"],
     description = "Policy DssCheckerRoster uses to pick a checker factory on each recheck",

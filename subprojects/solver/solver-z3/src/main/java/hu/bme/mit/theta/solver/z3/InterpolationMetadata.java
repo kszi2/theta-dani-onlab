@@ -55,43 +55,31 @@ record InterpolationMetadata(
         FuncDecl<BoolSort> itp = ctx.mkFuncDecl("itp", exprsToSorts(cSym), ctx.getBoolSort());
 
         // Rule 1: a => A(sA)
-        BoolExpr rule1 =
-                ctx.mkForall(aSym, ctx.mkImplies(a, A.apply(aSym)), 1, null, null, null, null);
+        BoolExpr rule1 = forall(ctx, aSym, ctx.mkImplies(a, A.apply(aSym)));
         hornSolver.add(rule1);
 
         // Rule 2: b => B(sB)
-        BoolExpr rule2 =
-                ctx.mkForall(bSym, ctx.mkImplies(b, B.apply(bSym)), 1, null, null, null, null);
+        BoolExpr rule2 = forall(ctx, bSym, ctx.mkImplies(b, B.apply(bSym)));
         hornSolver.add(rule2);
 
         // Rule 3: A(sA) => itp(sC)
-        BoolExpr rule3 =
-                ctx.mkForall(
-                        aSym,
-                        ctx.mkImplies(A.apply(aSym), itp.apply(cSym)),
-                        1,
-                        null,
-                        null,
-                        null,
-                        null);
-        ;
+        BoolExpr rule3 = forall(ctx, aSym, ctx.mkImplies(A.apply(aSym), itp.apply(cSym)));
         hornSolver.add(rule3);
 
         // Rule 4: itp(sC) ∧ B(sB) => false
         BoolExpr rule4 =
-                ctx.mkForall(
+                forall(
+                        ctx,
                         bSym,
-                        ctx.mkImplies(ctx.mkAnd(itp.apply(cSym), B.apply(bSym)), ctx.mkFalse()),
-                        1,
-                        null,
-                        null,
-                        null,
-                        null);
-        ;
+                        ctx.mkImplies(ctx.mkAnd(itp.apply(cSym), B.apply(bSym)), ctx.mkFalse()));
         hornSolver.add(rule4);
 
         Status result = hornSolver.check();
         if (result == Status.SATISFIABLE) {
+            if (cSym.length == 0) {
+                // A nullary interpolant (no shared constants) is a constant, not a function.
+                return (BoolExpr) hornSolver.getModel().eval(itp.apply(), true);
+            }
             final var interp = hornSolver.getModel().getFuncInterp(itp);
             final var values =
                     Streams.concat(
@@ -100,11 +88,29 @@ record InterpolationMetadata(
             BoolExpr answer = ctx.mkOr(values.toArray(BoolExpr[]::new));
             return (BoolExpr) answer.substituteVars(cSym);
         } else {
-            return null;
+            throw new IllegalStateException(
+                    "Interpolation failed: the Horn solver returned "
+                            + result
+                            + (result == Status.UNKNOWN
+                                    ? " (" + hornSolver.getReasonUnknown() + ")"
+                                    : ""));
         }
     }
 
     private static Sort[] exprsToSorts(Expr[] exprs) {
         return Arrays.stream(exprs).map(Expr::getSort).toArray(Sort[]::new);
+    }
+
+    /**
+     * A universally quantified Horn rule. Z3 rejects quantifiers without bound variables ("number
+     * of bound variables is 0"), which happens when a partition is ground, so such a rule is the
+     * body itself.
+     */
+    private static BoolExpr forall(
+            final Context ctx, final com.microsoft.z3.Expr<?>[] bound, final BoolExpr body) {
+        if (bound.length == 0) {
+            return body;
+        }
+        return ctx.mkForall(bound, body, 1, null, null, null, null);
     }
 }

@@ -115,15 +115,18 @@ enum class DssDecomposition {
 }
 
 /**
- * Which DSS actor-runtime driver runs the decomposed block graph - see `doc/DSS.md`'s
- * `DssActorRuntime`/`SequentialDssExecutor`. Simplified from CPAchecker's confirmed three
- * (`DSS`/`SINGLE_WORKER`/`SEQUENTIAL`) to two, since nothing in this port has needed to distinguish
- * `SINGLE_WORKER` from `SEQUENTIAL`.
+ * Which DSS actor-runtime driver runs the decomposed block graph - see `doc/DSS.md`. CPAchecker has
+ * three (`DSS`/`SINGLE_WORKER`/`SEQUENTIAL`); `SINGLE_WORKER` has no counterpart here. Unlike
+ * CPAchecker, the default is `SEQUENTIAL`: Theta's default (legacy) Z3 binding crashes when used
+ * from several threads at once, so `CONCURRENT` needs `--dss-solver Z3:new`.
  */
 enum class DssExecutor {
-  /** One platform thread per block (`runDssActors`). */
+  /** One platform thread per block (`runDssActors`), CPAchecker's `DSS` executor. */
   CONCURRENT,
-  /** Deterministic, single-threaded (`runDssActorsSequentially`). */
+  /**
+   * Deterministic, single-threaded round-robin (`runDssActorsSequentially`), CPAchecker's
+   * `SEQUENTIAL`.
+   */
   SEQUENTIAL,
 }
 

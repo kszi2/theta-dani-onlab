@@ -26,6 +26,7 @@ import hu.bme.mit.theta.analysis.unit.UnitPrec
 import hu.bme.mit.theta.common.logging.Logger
 import hu.bme.mit.theta.frontend.ParseContext
 import hu.bme.mit.theta.graphsolver.patterns.constraints.MCM
+import hu.bme.mit.theta.solver.SolverManager
 import hu.bme.mit.theta.xcfa.analysis.XcfaAction
 import hu.bme.mit.theta.xcfa.analysis.XcfaPrec
 import hu.bme.mit.theta.xcfa.analysis.XcfaState
@@ -71,8 +72,9 @@ import hu.bme.mit.theta.xcfa.model.XCFA
  *
  * [DssConfig.checkerBackends] lists which backend builds each of [DssCheckerRoster]'s checker
  * factories, one entry per roster slot (repeat a name for more than one of a kind) -
- * `--dss-checker-backends CEGAR_PRED_CART` (the default, a one-element list) reproduces the
- * original byte-for-byte single-checker behavior. The three `CEGAR_*` entries
+ * `--dss-checker-backends CEGAR_PRED_BOOL` (the default, a one-element list) is a single boolean
+ * predicate-abstraction checker, which `PredicateBlockBehavior`'s handling of strongly connected
+ * components relies on. The three `CEGAR_*` entries
  * ([DssCheckerBackend.CEGAR_PRED_CART]/[CEGAR_PRED_BOOL][DssCheckerBackend.CEGAR_PRED_BOOL]/
  * [CEGAR_PRED_SPLIT][DssCheckerBackend.CEGAR_PRED_SPLIT]) are all [getCegarChecker] with
  * [defaultPredicateCegarConfig] - the same "thin orchestration layer" every DSS test in
@@ -140,8 +142,6 @@ fun getDssChecker(
   // One independent factory per dssConfig.checkerBackends entry - .map already calls its lambda
   // fresh for every element, so the roster holds distinct instances (matters for DssCheckerRoster's
   // index-based bookkeeping, not just its size), not shared references to one closure.
-  // --dss-checker-backends CEGAR_PRED_CART (the default, a one-element list) is therefore still
-  // byte-for-byte the original single-checker behavior.
   val checkers: List<CheckerFactory> =
     dssConfig.checkerBackends.map { backend ->
       when (backend) {
@@ -152,7 +152,7 @@ fun getDssChecker(
               blockXcfa,
               mcm,
               parseContext,
-              defaultPredicateCegarConfig(backend.toCegarDomain()),
+              defaultPredicateCegarConfig(backend.toCegarDomain(), dssConfig.solver),
               logger,
             )
           }
@@ -182,6 +182,7 @@ fun getDssChecker(
   // silently give each block its own independent selection-strategy state instead of one shared
   // across the whole run).
   val checkerRoster = DssCheckerRoster(checkers, selectionStrategy)
+  val dssSolverFactory = SolverManager.resolveSolverFactory(dssConfig.solver)
   val behaviorFor = { block: Block ->
     PredicateBlockBehavior(
       xcfa,
@@ -190,6 +191,7 @@ fun getDssChecker(
       checkerRoster,
       useGlobalPredicatePool = dssConfig.globalPredicatePool,
       resetPrecisionForEveryRun = dssConfig.resetPrecisionForEveryRun,
+      solverFactory = dssSolverFactory,
     )
   }
 

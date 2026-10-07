@@ -38,7 +38,7 @@ class DssObserverActor(
 
   private var shutdown = false
   private var result: DssResult? = null
-  private var errorMessage: String? = null
+  private var failure: Throwable? = null
   private val statsReceivedFrom = mutableSetOf<String>()
 
   override fun shutdownRequested(): Boolean = shutdown
@@ -47,7 +47,7 @@ class DssObserverActor(
     when (message.type) {
       DssMessageType.RESULT -> result = (message as DssResultMessage).result
       DssMessageType.EXCEPTION -> {
-        errorMessage = (message as DssExceptionMessage).error.message
+        failure = (message as DssExceptionMessage).error
         shutdown = true
       }
       DssMessageType.STATISTIC -> statsReceivedFrom.add(message.senderId)
@@ -77,7 +77,7 @@ class DssObserverActor(
    * same verdict once it has independently determined [shutdownRequested] is true.
    */
   fun verdict(): DssResult {
-    errorMessage?.let { throw IllegalStateException(it) }
+    failure?.let { throw IllegalStateException(it.message, it) }
     return result ?: error("Analysis finished but no result is present.")
   }
 }

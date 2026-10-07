@@ -31,6 +31,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.Arguments
 import org.junit.jupiter.params.provider.MethodSource
+import org.junit.jupiter.params.provider.ValueSource
 
 /**
  * End-to-end tests for `--backend DSS` (build-order step 8's CLI integration,
@@ -189,13 +190,37 @@ class XcfaCliDssTest {
     )
   }
 
+  @ParameterizedTest
+  @ValueSource(strings = ["/c/dss/safe.c", "/c/dss/unsafe.c"])
+  fun `the CPAchecker merge and precision options parse and run to completion`(input: String) {
+    main(
+      arrayOf(
+        "--backend",
+        "DSS",
+        "--dss-decomposition",
+        "MERGE",
+        "--dss-target-block-count",
+        "1",
+        "--dss-largest-horizontal-merge",
+        "1",
+        "--dss-allow-single-block-decomposition",
+        "--dss-reset-precision",
+        "--input-type",
+        "C",
+        "--input",
+        javaClass.getResource(input)!!.path,
+        "--stacktrace",
+        "--debug",
+      )
+    )
+  }
+
   @Test
   fun `--dss-global-predicate-pool false parses and runs to completion`() {
-    // Verdict correctness (turning the pool off is sound but can flip a SAFE program to a
-    // spurious UNSAFE one) is already proven at the xcfa-dss-actor level - see
-    // PredicateBlockBehaviorTest's `turning the global predicate pool off reproduces its own known
-    // precision gap`. This test's own job, matching every other test in this file, is just the CLI
-    // wiring: does the new flag parse and flow through to a completed run without crashing.
+    // Verdict correctness without the pool is covered at the xcfa-dss-actor level - see
+    // PredicateBlockBehaviorTest's `without the global predicate pool, violation conditions still
+    // refute the spurious error`. This test's own job, matching every other test in this file, is
+    // just the CLI wiring: does the flag parse and flow through to a completed run.
     main(
       arrayOf(
         "--backend",

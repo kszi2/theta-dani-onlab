@@ -31,6 +31,7 @@ import java.time.Duration
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTimeoutPreemptively
 import org.junit.jupiter.api.BeforeAll
+import org.junit.jupiter.api.RepeatedTest
 import org.junit.jupiter.api.Test
 
 /**
@@ -261,6 +262,17 @@ class DiverseProgramsActorTest {
     val wholeProgram = twoSequentialLoopsXcfa(safe = false)
     assertEquals(DssResult.UNSAFE, checkDecomposed(wholeProgram))
     assert(checkDirectly(wholeProgram).isUnsafe) { "test fixture itself should be unsafe" }
+  }
+
+  /**
+   * Regression test: depending on the message order of the concurrent executor, this program used
+   * to be reported SAFE, because a violation condition that reached a block before any of its
+   * preconditions was later suppressed as "already sent" (see `PredicateBlockBehaviorStepTest`).
+   * Repeated, since only some interleavings exposed it.
+   */
+  @RepeatedTest(5)
+  fun `two independent sequential loops are UNSAFE under every message order`() {
+    assertEquals(DssResult.UNSAFE, checkDecomposed(twoSequentialLoopsXcfa(safe = false)))
   }
 
   @Test

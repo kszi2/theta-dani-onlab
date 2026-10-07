@@ -27,18 +27,22 @@ package hu.bme.mit.theta.xcfa.cli.params
  * construct one (which would otherwise create a circular project dependency once this module
  * depends on DSS for `--algorithm DSS`).
  *
- * [domain] defaults to [Domain.PRED_CART], preserving every existing zero-argument call site's
- * original behavior unchanged; DSS's own `ConfigToDssChecker.kt` is the one caller that passes a
- * different value, for its `DssCheckerBackend.CEGAR_PRED_BOOL`/`CEGAR_PRED_SPLIT` options - see
- * `doc/DSS.md` for why only the three `PredPrec`-based domains are offered there, not [Domain.EXPL]
- * or the product domains.
+ * [domain] defaults to [Domain.PRED_BOOL]: DSS's handling of strongly connected components relies on
+ * boolean predicate abstraction (see `PredicateBlockBehavior`). `ConfigToDssChecker.kt` passes the
+ * domain of its `DssCheckerBackend.CEGAR_PRED_*` options explicitly - see `doc/DSS.md` for why only
+ * the three `PredPrec`-based domains are offered there, not [Domain.EXPL] or the product domains.
  */
 fun defaultPredicateCegarConfig(
-  domain: Domain = Domain.PRED_CART
+  domain: Domain = Domain.PRED_BOOL,
+  solver: String? = null,
 ): XcfaConfig<SpecFrontendConfig, SpecBackendConfig> {
   val config = XcfaConfig<SpecFrontendConfig, SpecBackendConfig>()
   config.backendConfig.createSpecConfig()
   val cegarConfig = config.backendConfig.specConfig as CegarConfig
   cegarConfig.abstractorConfig.domain = domain
+  if (solver != null) {
+    cegarConfig.abstractorConfig.abstractionSolver = solver
+    cegarConfig.refinerConfig.refinementSolver = solver
+  }
   return config
 }
