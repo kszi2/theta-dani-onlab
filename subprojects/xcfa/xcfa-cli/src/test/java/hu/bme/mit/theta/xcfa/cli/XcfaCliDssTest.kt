@@ -445,4 +445,45 @@ class XcfaCliDssTest {
     assertTrue(temp.exists())
     temp.toFile().deleteRecursively()
   }
+
+  @ParameterizedTest
+  @ValueSource(strings = ["safe", "unsafe"])
+  fun `--loglevel INFO prints exactly one SafetyResult line, the DSS verdict`(program: String) {
+    // Every block analysis is an ordinary checker that logs its own SafetyResult; those must not
+    // reach the output at INFO, or BenchExec's theta-xcfa tool-info (which takes the last
+    // SafetyResult line) would score a crashing DSS run with a block's result.
+    val temp = createTempDirectory()
+    val captured = temp.resolve("stdout_stderr").toFile()
+    PrintStream(BufferedOutputStream(FileOutputStream(captured)), true).use { ps ->
+      val savedOut = System.out
+      val savedErr = System.err
+      System.setOut(ps)
+      System.setErr(ps)
+      try {
+        main(
+          arrayOf(
+            "--backend",
+            "DSS",
+            "--input-type",
+            "C",
+            "--input",
+            javaClass.getResource("/c/dss/$program.c")!!.path,
+            "--stacktrace",
+            "--loglevel",
+            "INFO",
+          )
+        )
+      } finally {
+        System.setOut(savedOut)
+        System.setErr(savedErr)
+      }
+    }
+    val resultLines = captured.readLines().filter { it.contains("SafetyResult") }
+    temp.toFile().deleteRecursively()
+    assertTrue(resultLines.size == 1) { "expected one SafetyResult line, got: $resultLines" }
+    val expected = if (program == "safe") "SafetyResult Safe" else "SafetyResult Unsafe"
+    assertTrue(resultLines.single().contains(expected)) {
+      "expected $expected, got: ${resultLines.single()}"
+    }
+  }
 }

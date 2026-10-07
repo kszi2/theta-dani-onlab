@@ -143,6 +143,7 @@ fun getDssChecker(
   // index-based bookkeeping, not just its size), not shared references to one closure.
   // --dss-checker-backends CEGAR_PRED_CART (the default, a one-element list) is therefore still
   // byte-for-byte the original single-checker behavior.
+  val blockLogger = BlockAnalysisLogger(logger)
   val checkers: List<CheckerFactory> =
     dssConfig.checkerBackends.map { backend ->
       when (backend) {
@@ -154,7 +155,7 @@ fun getDssChecker(
               mcm,
               parseContext,
               defaultPredicateCegarConfig(backend.toCegarDomain(), dssConfig.solver),
-              logger,
+              blockLogger,
             )
           }
         DssCheckerBackend.BMC,
@@ -167,7 +168,7 @@ fun getDssChecker(
                 blockXcfa,
                 parseContext,
                 defaultBoundedConfigFor(backend.toBoundedBackend()),
-                logger,
+                blockLogger,
               )
             )
           }
@@ -280,4 +281,26 @@ private fun adaptBoundedChecker(
     SafetyChecker<LocationInvariants, Trace<XcfaState<PtrState<ExplState>>, XcfaAction>, UnitPrec>
 ): XcfaChecker = SafetyChecker { _ ->
   inner.check() as SafetyResult<LocationInvariants, Trace<XcfaState<PtrState<*>>, XcfaAction>>
+}
+
+/**
+ * The logger of the block analyses: forwards to [delegate] with every message demoted to at least
+ * [Logger.Level.DETAIL] (finer messages to [Logger.Level.VERBOSE]). Every block analysis is an
+ * ordinary checker that logs its own `SafetyResult` (at `MAINSTEP`); without the demotion, any log
+ * level from `MAINSTEP` on prints one result line per block analysis before DSS's own verdict, and
+ * tools that read the verdict off the output (BenchExec's `theta-xcfa` tool-info takes the last
+ * `SafetyResult` line, and only reports an error when there is none) would score a crashing DSS run
+ * with the last block's result.
+ */
+private class BlockAnalysisLogger(private val delegate: Logger) : Logger {
+  override fun write(level: Logger.Level, pattern: String, vararg objects: Any?): Logger {
+    val demoted =
+      when {
+        level == Logger.Level.DISABLE -> level
+        level <= Logger.Level.SUBSTEP -> Logger.Level.DETAIL
+        else -> Logger.Level.VERBOSE
+      }
+    delegate.write(demoted, pattern, *objects)
+    return this
+  }
 }
