@@ -21,17 +21,22 @@ import hu.bme.mit.theta.analysis.algorithm.EmptyProof
 import hu.bme.mit.theta.analysis.algorithm.Proof
 import hu.bme.mit.theta.analysis.algorithm.SafetyChecker
 import hu.bme.mit.theta.analysis.algorithm.SafetyResult
+import hu.bme.mit.theta.analysis.expl.ExplPrec
 import hu.bme.mit.theta.analysis.expl.ExplState
+import hu.bme.mit.theta.analysis.ptr.PtrPrec
 import hu.bme.mit.theta.analysis.ptr.PtrState
 import hu.bme.mit.theta.analysis.runtimemonitor.MonitorCheckpoint
 import hu.bme.mit.theta.analysis.unit.UnitPrec
 import hu.bme.mit.theta.common.logging.Logger
 import hu.bme.mit.theta.core.model.ImmutableValuation
+import hu.bme.mit.theta.core.type.abstracttype.AbstractExprs.Eq
+import hu.bme.mit.theta.core.utils.ExprUtils
 import hu.bme.mit.theta.frontend.ParseContext
 import hu.bme.mit.theta.graphsolver.patterns.constraints.MCM
 import hu.bme.mit.theta.solver.SolverFactory
 import hu.bme.mit.theta.solver.SolverManager
 import hu.bme.mit.theta.xcfa.analysis.XcfaAction
+import hu.bme.mit.theta.xcfa.analysis.XcfaLastPrecProvider
 import hu.bme.mit.theta.xcfa.analysis.XcfaPrec
 import hu.bme.mit.theta.xcfa.analysis.XcfaState
 import hu.bme.mit.theta.xcfa.analysis.proof.LocationInvariants
@@ -76,6 +81,8 @@ import hu.bme.mit.theta.xcfa.dss.analysis.FastestCheckerSelectionStrategy
 import hu.bme.mit.theta.xcfa.dss.analysis.PriorityCheckerSelectionStrategy
 import hu.bme.mit.theta.xcfa.dss.analysis.RoundRobinCheckerSelectionStrategy
 import hu.bme.mit.theta.xcfa.dss.analysis.XcfaChecker
+import hu.bme.mit.theta.xcfa.dss.analysis.collectPreds
+import hu.bme.mit.theta.xcfa.dss.analysis.getPredPrec
 import hu.bme.mit.theta.xcfa.dss.analysis.withCheckerSolverFallback
 import hu.bme.mit.theta.xcfa.dss.analysis.withSolverConstructionLock
 import hu.bme.mit.theta.xcfa.dss.decomposition.AcyclicMergeDecomposition
@@ -189,6 +196,17 @@ fun getDssChecker(
               cexMonitor,
             ),
             blockLogger,
+          )
+        }
+      DssCheckerBackend.CEGAR_EXPL -> { blockXcfa: XCFA ->
+          adaptExplChecker(
+            getCegarChecker(
+              blockXcfa,
+              mcm,
+              parseContext,
+              getDefaultPredCegarConfig(Domain.EXPL, solver ?: dssConfig.solver, cexMonitor),
+              blockLogger,
+            )
           )
         }
       DssCheckerBackend.BMC,
@@ -433,7 +451,8 @@ private fun DssCheckerBackend.toBoundedBackend(): Backend =
     DssCheckerBackend.BOUNDED -> Backend.BOUNDED
     DssCheckerBackend.CEGAR_PRED_CART,
     DssCheckerBackend.CEGAR_PRED_BOOL,
-    DssCheckerBackend.CEGAR_PRED_SPLIT ->
+    DssCheckerBackend.CEGAR_PRED_SPLIT,
+    DssCheckerBackend.CEGAR_EXPL ->
       throw IllegalArgumentException("$this has no bounded-family Backend")
   }
 
@@ -443,12 +462,37 @@ private fun DssCheckerBackend.toCegarDomain(): Domain =
     DssCheckerBackend.CEGAR_PRED_CART -> Domain.PRED_CART
     DssCheckerBackend.CEGAR_PRED_BOOL -> Domain.PRED_BOOL
     DssCheckerBackend.CEGAR_PRED_SPLIT -> Domain.PRED_SPLIT
+    DssCheckerBackend.CEGAR_EXPL,
     DssCheckerBackend.BMC,
     DssCheckerBackend.KIND,
     DssCheckerBackend.IMC,
     DssCheckerBackend.KINDIMC,
     DssCheckerBackend.BOUNDED ->
-      throw IllegalArgumentException("$this is not a CEGAR entry, has no Domain")
+      throw IllegalArgumentException("$this is not a predicate CEGAR entry")
+  }
+
+/**
+ * Runs an EXPL CEGAR checker on DSS's predicate precisions: it tracks the variables of the given
+ * predicates, and reports its final precision as one `v = v` atom per tracked variable, the only
+ * predicate form that `--dss-reuse-block-precision` can store without changing what it tracks.
+ */
+fun adaptExplChecker(inner: XcfaChecker): XcfaChecker =
+  object : XcfaChecker by inner, XcfaLastPrecProvider {
+    override val lastPrec: XcfaPrec<*>?
+      get() =
+        (((inner as? XcfaLastPrecProvider)?.lastPrec?.p as? PtrPrec<*>)?.innerPrec as? ExplPrec)
+          ?.let { prec -> getPredPrec(prec.vars.map { Eq(it.ref, it.ref) }.toSet()) }
+
+    override fun check() = inner.check()
+
+    override fun check(
+      prec: XcfaPrec<*>?
+    ): SafetyResult<LocationInvariants, Trace<XcfaState<PtrState<*>>, XcfaAction>> =
+      inner.check(
+        prec?.let {
+          XcfaPrec(PtrPrec(ExplPrec.of(ExprUtils.getVars(it.collectPreds())), emptySet()))
+        }
+      )
   }
 
 /**

@@ -322,12 +322,7 @@ class PredicateBlockBehavior(
       when (val result = run(startState, violationCondition)) {
         is RunResult.Safe -> {
           if (!discardSummary && result.postcondition != False()) {
-            summaries +=
-              Summary(
-                result.postcondition,
-                result.precision,
-                false,
-              )
+            summaries += Summary(result.postcondition, result.precision, false)
           }
         }
         is RunResult.Unsafe -> {
@@ -338,12 +333,7 @@ class PredicateBlockBehavior(
             if (discardSummary) null
             else run(startState, violationCondition = null, keepSpecificationTargets = false)
           if (summary is RunResult.Safe && summary.postcondition != False()) {
-            summaries +=
-              Summary(
-                summary.postcondition,
-                summary.precision,
-                false,
-              )
+            summaries += Summary(summary.postcondition, summary.precision, false)
           }
           targetReached = true
           // CPAchecker: "For trivial states, the same vc must have been sent already." That does

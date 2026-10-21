@@ -99,8 +99,8 @@ enum class DssCheckerSelectionMethod {
 }
 
 /**
- * Backends a DSS block checker can use: those producing DSS's `LocationInvariants`/`Trace` shape,
- * and only the `PredPrec` CEGAR domains, since others couldn't take the global pool seed.
+ * Backends a DSS block checker can use: those producing DSS's `LocationInvariants`/`Trace` shape.
+ * CEGAR runs the `PredPrec` domains, or `EXPL` over the variables of the transmitted predicates.
  */
 enum class DssCheckerBackend {
   /** `getCegarChecker` with `Domain.PRED_CART` - DSS's original, only checker. */
@@ -109,6 +109,8 @@ enum class DssCheckerBackend {
   CEGAR_PRED_BOOL,
   /** `getCegarChecker` with `Domain.PRED_SPLIT`. */
   CEGAR_PRED_SPLIT,
+  /** `getCegarChecker` with `Domain.EXPL`, tracking the variables of the received predicates. */
+  CEGAR_EXPL,
   /** `getBoundedChecker`, `--backend BMC`'s own preset: only the SAT-based bounded check. */
   BMC,
   /** `getBoundedChecker`, `--backend KIND`'s own preset: only k-induction. */
@@ -286,7 +288,8 @@ data class DssConfig(
         "list's length is the roster size (repeat a name for more than one of a kind, e.g. " +
         "CEGAR_PRED_CART,CEGAR_PRED_CART,BMC). CEGAR_PRED_CART/CEGAR_PRED_BOOL/CEGAR_PRED_SPLIT " +
         "are getCegarChecker with the matching Domain, all three still consuming " +
-        "--dss-global-predicate-pool's precision seed same as always; the bounded-family entries " +
+        "--dss-global-predicate-pool's precision seed same as always; CEGAR_EXPL is " +
+        "getCegarChecker with Domain.EXPL, tracking the variables of that seed; the bounded-family entries " +
         "(BMC/KIND/IMC/KINDIMC/BOUNDED) are built via getBoundedChecker with the matching " +
         "--backend preset and do NOT consume that seed (they run on UnitPrec, not XcfaPrec, so " +
         "there is nothing to seed it into). Every block draws its checker for each recheck from " +

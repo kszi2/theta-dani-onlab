@@ -77,7 +77,7 @@ DSS works on programs with a single XCFA procedure (the CLI rejects others).
 | `--dss-checker-solver-fallback` | off | Repeat a block checker's check that throws (e.g. Z3 `unknown` on nonlinear arithmetic) with the same checker over `--dss-fallback-solver`, before `--dss-checker-fallback` moves on (11.3) | none |
 | `--dss-fallback-solver NAME` | `JavaSMT:MATHSAT5` | Solver of `--dss-solver-fallback` and `--dss-checker-solver-fallback` | none |
 | `--dss-global-predicate-pool BOOL` | `true` | Seed every block's precision with all assume conditions of the program | none (similar in effect to `performInitialStaticRefinement`, see 11.4) |
-| `--dss-checker-backends LIST` | `CEGAR_PRED_CART` | Checkers used for block analyses (CEGAR with a predicate domain, or bounded model checkers) | none (always the predicate CPA) |
+| `--dss-checker-backends LIST` | `CEGAR_PRED_CART` | Checkers used for block analyses (CEGAR with a predicate domain, `CEGAR_EXPL` tracking the variables of the transmitted predicates, or bounded model checkers) | none (always the predicate CPA) |
 | `--dss-checker-selection {ROUND_ROBIN,PRIORITY,FASTEST}` | `ROUND_ROBIN` | How a checker is picked from that list for every block analysis: `ROUND_ROBIN` cycles the list; `PRIORITY` always starts with the first entry and uses the others only as fallbacks, in order; `FASTEST` runs every entry on a block's first analysis, then starts that block's later analyses with the entry that finished fastest there, the others following as fallbacks in order (even without `--dss-checker-fallback`) | none |
 | `--dss-checker-fallback` | off | If a block analysis's checker throws or is inconclusive, repeat the analysis with the next checker (chosen by the selection policy), at most once per list entry | none |
 | `--dss-trace` | off | Log a `DSS-TRACE` line per processed message, block analysis try, and sent or received postcondition/violation condition (`pc-in`, `pc-out`, `vc-in`, `vc-out` with the formula's disjuncts, nodes, atoms and variables; `pc-dedup`, `path-vcs`; `fastest-checker` with `FASTEST` selection) | none |
@@ -727,8 +727,10 @@ condition, which can grow exponentially; `MERGE` folds such branches into one bl
   predicates extracted statically from the program) - similar in spirit. On the programs of
   section 12 the pool did not change any verdict; turn it off for CPAchecker's behavior.
 * **Checker roster** (`--dss-checker-backends`, `--dss-checker-selection`): block analyses can use
-  predicate CEGAR with the cartesian, boolean or split domain, or bounded model checkers (which
-  ignore precisions and may miss targets).
+  predicate CEGAR with the cartesian, boolean or split domain, explicit-value CEGAR
+  (`CEGAR_EXPL`, which tracks the variables of the transmitted predicates and reports the variables
+  it tracked as `v = v` atoms), or bounded model checkers (which ignore precisions and may miss
+  targets).
 * **Self-loop absorbing, acyclic and min-cut decompositions** (`--dss-decomposition
   MERGE_ABSORB_SELF_LOOPS`, `MERGE_ACYCLIC`, `MIN_CUT*`, 5.4-5.6): blocks that contain a whole loop,
   with per-path violation conditions (6.3). CPAchecker's blocks never

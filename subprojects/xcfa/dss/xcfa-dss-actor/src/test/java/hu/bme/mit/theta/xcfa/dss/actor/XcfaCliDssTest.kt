@@ -75,6 +75,7 @@ class XcfaCliDssTest {
         Arguments.of("CEGAR_PRED_CART"),
         Arguments.of("CEGAR_PRED_BOOL"),
         Arguments.of("CEGAR_PRED_SPLIT"),
+        Arguments.of("CEGAR_EXPL"),
         Arguments.of("BMC"),
         Arguments.of("KIND"),
         Arguments.of("IMC"),
@@ -83,6 +84,7 @@ class XcfaCliDssTest {
         Arguments.of("CEGAR_PRED_CART,CEGAR_PRED_BOOL,CEGAR_PRED_SPLIT"),
         Arguments.of("CEGAR_PRED_CART,BMC,IMC"),
         Arguments.of("CEGAR_PRED_CART,CEGAR_PRED_CART,BMC"),
+        Arguments.of("CEGAR_EXPL,KIND"),
       )
 
     // Five random 2-4 entry DssCheckerBackend combinations (with repeats), drawn once from a fixed
