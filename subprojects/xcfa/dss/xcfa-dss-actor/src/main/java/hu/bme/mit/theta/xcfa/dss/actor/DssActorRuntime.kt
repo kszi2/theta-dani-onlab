@@ -19,6 +19,7 @@ import hu.bme.mit.theta.xcfa.dss.decomposition.Block
 import hu.bme.mit.theta.xcfa.dss.decomposition.BlockGraph
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.Semaphore
 
 private const val OBSERVER_ID = "__observer__"
 
@@ -28,13 +29,15 @@ private const val BLOCK_THREAD_JOIN_TIMEOUT_MILLIS = 10_000L
 
 /**
  * Runs one thread per block (CPAchecker's `MultithreadingDssExecutor`) and blocks until a verdict.
- * If [visualizationLog] is given, a [DssVisualizationActor] records every message into it.
+ * If [visualizationLog] is given, a [DssVisualizationActor] records every message into it. With
+ * [maxParallelBlocks] > 0, at most that many behavior calls run at a time (0: no limit).
  */
 fun runDssActors(
   blockGraph: BlockGraph,
   behaviorFor: (Block) -> DssBlockBehavior,
   pollIntervalMillis: Long = 10,
   visualizationLog: MutableList<DssLogEntry>? = null,
+  maxParallelBlocks: Int = 0,
 ): DssResult {
   val active = ConcurrentHashMap.newKeySet<String>()
   val extraIds = if (visualizationLog != null) setOf(VISUALIZER_ID) else emptySet()
@@ -57,12 +60,14 @@ fun runDssActors(
       DssConnection(inboxes.getValue(OBSERVER_ID), broadcaster, active),
       blockGraph.blocks.size,
     )
+  // Fair, so a block with queued messages can't be starved by busier ones
+  val permits = if (maxParallelBlocks > 0) Semaphore(maxParallelBlocks, true) else null
   val blockActors =
     blockGraph.blocks.map { block ->
       DssBlockActor(
         block,
         DssConnection(inboxes.getValue(block.id), broadcaster, active),
-        behaviorFor(block),
+        behaviorFor(block).let { if (permits == null) it else CappedBlockBehavior(it, permits) },
       )
     }
   val visualizer =
@@ -115,5 +120,33 @@ fun runDssActors(
     // solver threads have corrupted solver state for the next run in the same JVM.
     blockThreads.forEach { it.join(BLOCK_THREAD_JOIN_TIMEOUT_MILLIS) }
     monitor.join(BLOCK_THREAD_JOIN_TIMEOUT_MILLIS)
+  }
+}
+
+/**
+ * Waiting for a permit happens inside the caller's `active` marker, so it never looks quiescent.
+ */
+private class CappedBlockBehavior(
+  private val behavior: DssBlockBehavior,
+  private val permits: Semaphore,
+) : DssBlockBehavior by behavior {
+
+  private fun <T> withPermit(analysis: () -> T): T {
+    permits.acquire()
+    try {
+      return analysis()
+    } finally {
+      permits.release()
+    }
+  }
+
+  override fun initialMessages() = withPermit { behavior.initialMessages() }
+
+  override fun onPostCondition(message: DssPostConditionMessage) = withPermit {
+    behavior.onPostCondition(message)
+  }
+
+  override fun onViolationCondition(message: DssViolationConditionMessage) = withPermit {
+    behavior.onViolationCondition(message)
   }
 }

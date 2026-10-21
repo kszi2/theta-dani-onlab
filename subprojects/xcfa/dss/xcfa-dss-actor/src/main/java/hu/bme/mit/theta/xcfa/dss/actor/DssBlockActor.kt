@@ -102,8 +102,10 @@ class DssBlockActor(
    * Broadcasts [DssBlockBehavior.initialMessages]; returns `false` if that failed (a
    * [DssExceptionMessage] was broadcast). Separate from [run] for the sequential executor.
    */
-  fun start(): Boolean =
-    try {
+  fun start(): Boolean {
+    // Like processOneMessage: a capped initial analysis may wait for a permit without looking idle
+    connection.active.add(id)
+    return try {
       broadcast(
         DssTrace.span("init", "actor" to id, outcome = { "out${it.size}" }) {
           behavior.initialMessages()
@@ -113,7 +115,10 @@ class DssBlockActor(
     } catch (e: Throwable) { // CPAchecker catches `Exception | Error` here, too
       connection.broadcaster.broadcastToAll(DssExceptionMessage(id, e))
       false
+    } finally {
+      connection.active.remove(id)
     }
+  }
 
   override fun run() {
     if (!start()) return

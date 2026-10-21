@@ -269,7 +269,12 @@ fun getDssChecker(
   val dssResult =
     try {
       when (dssConfig.executor) {
-        DssExecutor.CONCURRENT -> runDssActors(blockGraph, behaviorFor = behaviorFor)
+        DssExecutor.CONCURRENT ->
+          runDssActors(
+            blockGraph,
+            behaviorFor = behaviorFor,
+            maxParallelBlocks = dssConfig.maxParallelBlocks,
+          )
         DssExecutor.SEQUENTIAL -> runDssActorsSequentially(blockGraph, behaviorFor = behaviorFor)
         DssExecutor.PROCESS ->
           runDssActorsInProcesses(

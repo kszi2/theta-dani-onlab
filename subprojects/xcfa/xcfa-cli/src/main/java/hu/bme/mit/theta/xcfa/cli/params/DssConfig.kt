@@ -249,6 +249,13 @@ data class DssConfig(
   )
   var maxProcesses: Int = 0,
   @Parameter(
+    names = ["--dss-max-parallel-blocks"],
+    description =
+      "--dss-executor CONCURRENT: at most this many block analyses run at the same time (0: no " +
+        "limit); every block keeps its own thread",
+  )
+  var maxParallelBlocks: Int = 0,
+  @Parameter(
     names = ["--dss-worker-heap"],
     description =
       "--dss-executor PROCESS: maximum heap of each worker process (e.g. 2g); by default the " +

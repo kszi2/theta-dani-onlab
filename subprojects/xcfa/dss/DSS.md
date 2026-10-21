@@ -70,6 +70,7 @@ DSS works on programs with a single XCFA procedure (the CLI rejects others).
 | `--dss-reuse-block-precision` | off | Add the predicates a block's earlier CEGAR runs ended with to the initial precision of its next runs (11.2) | none |
 | `--dss-executor {SEQUENTIAL,CONCURRENT,PROCESS}` | `SEQUENTIAL` | Actor driver; `PROCESS` analyzes every block in a worker process of its own (8.4) | `executorType` (`DSS`, i.e. concurrent, by default) |
 | `--dss-max-processes N` | `0` | `PROCESS`: at most `N` worker processes (`0`: one per block); a worker serving several blocks analyzes them one at a time | none |
+| `--dss-max-parallel-blocks N` | `0` | `CONCURRENT`: at most `N` block analyses at a time (`0`: no limit); each block keeps its thread | none |
 | `--dss-worker-heap SIZE` | same as this JVM | `PROCESS`: `-Xmx` of every worker process | none |
 | `--dss-solver NAME` | `Z3` | Solver of the block checkers and of DSS's own SMT checks | the solver of the PredicateCPA (MathSAT5) |
 | `--dss-solver-fallback` | off | Repeat a DSS coverage/satisfiability check that `--dss-solver` fails on (unknown result or crash) with `--dss-fallback-solver` (11.3); without it, such a failure gives an unknown verdict | none |

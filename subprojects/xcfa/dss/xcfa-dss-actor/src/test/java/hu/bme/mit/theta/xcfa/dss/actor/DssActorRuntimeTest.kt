@@ -20,8 +20,10 @@ import hu.bme.mit.theta.xcfa.dss.decomposition.BlockGraph
 import hu.bme.mit.theta.xcfa.model.EmptyMetaData
 import hu.bme.mit.theta.xcfa.model.XcfaLocation
 import java.time.Duration
+import java.util.concurrent.atomic.AtomicInteger
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTimeoutPreemptively
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /**
@@ -45,10 +47,11 @@ class DssActorRuntimeTest {
   /** Fails the test instead of hanging forever if the actor network never reaches quiescence. */
   private fun runWithTimeout(
     blockGraph: BlockGraph,
+    maxParallelBlocks: Int = 0,
     behaviorFor: (Block) -> DssBlockBehavior,
   ): DssResult =
     assertTimeoutPreemptively<DssResult>(Duration.ofSeconds(10)) {
-      runDssActors(blockGraph, behaviorFor)
+      runDssActors(blockGraph, behaviorFor, maxParallelBlocks = maxParallelBlocks)
     }
 
   @Test
@@ -130,5 +133,53 @@ class DssActorRuntimeTest {
       }
 
     assertEquals(DssResult.UNSAFE, result)
+  }
+
+  /** Records how many behavior calls overlap; each call takes long enough to overlap if allowed. */
+  private class OverlapCountingBehavior(
+    private val behavior: DssBlockBehavior,
+    private val running: AtomicInteger,
+    private val peak: AtomicInteger,
+  ) : DssBlockBehavior by behavior {
+
+    private fun <T> counted(call: () -> T): T {
+      peak.accumulateAndGet(running.incrementAndGet(), ::maxOf)
+      try {
+        Thread.sleep(50)
+        return call()
+      } finally {
+        running.decrementAndGet()
+      }
+    }
+
+    override fun initialMessages() = counted { behavior.initialMessages() }
+
+    override fun onPostCondition(message: DssPostConditionMessage) = counted {
+      behavior.onPostCondition(message)
+    }
+
+    override fun onViolationCondition(message: DssViolationConditionMessage) = counted {
+      behavior.onViolationCondition(message)
+    }
+  }
+
+  @Test
+  fun `maxParallelBlocks caps the overlapping block analyses and still reaches SAFE`() {
+    val leaves = (1..5).map { "L$it" }
+    val root = block("R", successorIds = leaves.toSet())
+    val blockGraph = BlockGraph(setOf(root) + leaves.map { block(it, predecessorIds = setOf("R")) })
+
+    for ((cap, expectedPeak) in listOf(0 to 6, 2 to 2, 1 to 1)) {
+      val running = AtomicInteger()
+      val peak = AtomicInteger()
+      val result =
+        runWithTimeout(blockGraph, maxParallelBlocks = cap) {
+          OverlapCountingBehavior(EchoBlockAnalysis(it.id), running, peak)
+        }
+
+      assertEquals(DssResult.SAFE, result)
+      if (cap == 0) assertTrue(peak.get() > 2, "uncapped peak ${peak.get()}")
+      else assertEquals(expectedPeak, peak.get())
+    }
   }
 }
