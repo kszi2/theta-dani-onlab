@@ -317,3 +317,35 @@ private fun or(disjuncts: List<Expr<BoolType>>): Expr<BoolType> {
     }
   return Or(factored)
 }
+
+/**
+ * A condition without auxiliary variables equivalent to [condition], or null if there is none this
+ * way. Conjuncts linked by shared auxiliary variables but no program variable constrain only the
+ * havocked values: they are dropped if satisfiable ([isSatisfiable]), else the condition is false.
+ */
+fun withoutAuxVars(
+  condition: Expr<BoolType>,
+  isSatisfiable: (Expr<BoolType>) -> Boolean,
+): Expr<BoolType>? {
+  fun conjuncts(expr: Expr<BoolType>): List<Expr<BoolType>> =
+    if (expr is AndExpr) expr.ops.flatMap(::conjuncts) else listOf(expr)
+  val components = mutableListOf<Pair<MutableSet<VarDecl<*>>, MutableList<Expr<BoolType>>>>()
+  for (conjunct in conjuncts(condition)) {
+    val vars = ExprUtils.getVars(conjunct).toMutableSet()
+    val linked =
+      components.filter { (other, _) -> vars.any { it in other && DssAuxVars.isAux(it) } }
+    components.removeAll(linked)
+    val exprs = linked.flatMap { it.second }.toMutableList().apply { add(conjunct) }
+    linked.forEach { vars.addAll(it.first) }
+    components += vars to exprs
+  }
+  val kept = mutableListOf<Expr<BoolType>>()
+  for ((vars, exprs) in components) {
+    when {
+      vars.none(DssAuxVars::isAux) -> kept += exprs
+      vars.any { !DssAuxVars.isAux(it) } -> return null
+      !isSatisfiable(And(exprs)) -> return False()
+    }
+  }
+  return And(kept)
+}

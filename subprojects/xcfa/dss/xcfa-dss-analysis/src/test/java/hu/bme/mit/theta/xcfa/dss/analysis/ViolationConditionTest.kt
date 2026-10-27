@@ -16,9 +16,11 @@
 package hu.bme.mit.theta.xcfa.dss.analysis
 
 import hu.bme.mit.theta.common.logging.NullLogger
+import hu.bme.mit.theta.core.decl.Decls.Var
 import hu.bme.mit.theta.core.decl.VarDecl
 import hu.bme.mit.theta.core.stmt.Stmts.Assign
 import hu.bme.mit.theta.core.stmt.Stmts.Assume
+import hu.bme.mit.theta.core.type.booltype.BoolExprs.False
 import hu.bme.mit.theta.core.type.booltype.BoolExprs.True
 import hu.bme.mit.theta.core.type.booltype.SmartBoolExprs.And
 import hu.bme.mit.theta.core.type.inttype.IntExprs.*
@@ -212,5 +214,17 @@ class ViolationConditionTest {
     // no common variable: plain union
     val p3 = setOf(Gt(y, Int(1)))
     assertEquals(p2 + p3, combinePredPrecs(listOf(p2, p3)))
+  }
+
+  @Test
+  fun `auxiliary variables are dropped from a condition only when they constrain nothing else`() {
+    val x = Var("x", Int()).ref
+    val y = Var("y", Int()).ref
+    @Suppress("UNCHECKED_CAST") val a = (DssAuxVars.of(0, Int()) as VarDecl<IntType>).ref
+    val bounded = And(Gt(a, Int(0)), Lt(a, Int(10)), Eq(x, Int(1)))
+    assertEquals(Eq(x, Int(1)), withoutAuxVars(bounded) { true })
+    assertEquals(False(), withoutAuxVars(bounded) { false })
+    assertEquals(null, withoutAuxVars(And(Gt(a, y), Eq(x, Int(1)))) { true })
+    assertEquals(Eq(x, y), withoutAuxVars(Eq(x, y)) { error("no auxiliary conjuncts to check") })
   }
 }

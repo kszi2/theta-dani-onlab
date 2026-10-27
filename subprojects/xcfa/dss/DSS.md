@@ -599,10 +599,16 @@ postconditions in the SCC reached a fixed point"); the implementation does not c
 
 **Per-path violation conditions** (6.3, blocks with an internal cycle) are under-approximations:
 each disjunct is the weakest precondition of one concrete path, so UNSAFE stays sound. For SAFE,
-a predecessor that refutes the union `U` keeps `post ∧ U` unsatisfiable in every later run (it keeps
-`U` as its target), so the block's next counterexample must start outside `U`; its path condition
-is then a new disjunct, and the union grows strictly while a target stays reachable - it cannot
-fall silent.
+the block must not fall silent while it has unreported error paths. A run yields one path, and the
+checker may return a known one again, or the predecessor may refute every path sent and answer
+with an unchanged postcondition. Both happened (wrong SAFE verdicts, nondeterministic, e.g.
+`pc_sfifo_1.cil-1`). So a known path triggers a run from `pre ∧ ¬U` (`newPathFrom`), and a block
+that found a new path stays `pathsPending`: an unchanged postcondition still re-analyzes it. It
+stops only after an analysis without a new path. Excluding `U` at the entry is sound: a reachable
+state in `U` makes the predecessor report `U`. The exclusion needs `U` without auxiliary variables
+(`withoutAuxVars` drops conjunct groups over auxiliary variables only); a path condition that ties
+a nondeterministic value to a program variable, or a known path that recurs, fails the analysis
+(unknown).
 
 **Termination** is not guaranteed, neither in CPAchecker (section 12). A loop block can keep
 receiving and refuting ever longer violation conditions while interpolation discovers new

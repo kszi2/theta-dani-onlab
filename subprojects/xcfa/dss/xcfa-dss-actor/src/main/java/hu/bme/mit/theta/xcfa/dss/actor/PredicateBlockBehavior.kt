@@ -23,6 +23,7 @@ import hu.bme.mit.theta.core.type.Expr
 import hu.bme.mit.theta.core.type.booltype.BoolExprs.False
 import hu.bme.mit.theta.core.type.booltype.BoolExprs.True
 import hu.bme.mit.theta.core.type.booltype.BoolType
+import hu.bme.mit.theta.core.type.booltype.SmartBoolExprs.And
 import hu.bme.mit.theta.core.type.booltype.SmartBoolExprs.Not
 import hu.bme.mit.theta.core.type.booltype.SmartBoolExprs.Or
 import hu.bme.mit.theta.core.utils.ExprUtils
@@ -47,6 +48,7 @@ import hu.bme.mit.theta.xcfa.dss.analysis.getPredPrec
 import hu.bme.mit.theta.xcfa.dss.analysis.hasInternalCycle
 import hu.bme.mit.theta.xcfa.dss.analysis.packPostcondition
 import hu.bme.mit.theta.xcfa.dss.analysis.runWorkerConfig
+import hu.bme.mit.theta.xcfa.dss.analysis.withoutAuxVars
 import hu.bme.mit.theta.xcfa.dss.decomposition.Block
 import hu.bme.mit.theta.xcfa.model.XCFA
 import hu.bme.mit.theta.xcfa.model.XcfaEdge
@@ -116,6 +118,12 @@ class PredicateBlockBehavior(
   /** Every path violation condition this block found so far, see [accumulatePathViolations]. */
   private val pathViolationsSoFar = linkedSetOf<Expr<BoolType>>()
 
+  /**
+   * Whether the last analysis found a new error path: then the block's other paths are still to be
+   * searched, also when the predecessor answers with an unchanged postcondition.
+   */
+  private var pathsPending = false
+
   private data class AnalysisResult(
     val summaries: List<Summary>,
     val violationCondition: Expr<BoolType>?,
@@ -157,7 +165,7 @@ class PredicateBlockBehavior(
   override fun initialMessages(): Collection<DssMessage> = runInitialAnalysis()
 
   override fun onPostCondition(message: DssPostConditionMessage): Collection<DssMessage> =
-    if (storePrecondition(message)) analyzePrecondition() else emptyList()
+    if (storePrecondition(message) || pathsPending) analyzePrecondition() else emptyList()
 
   override fun onViolationCondition(message: DssViolationConditionMessage): Collection<DssMessage> =
     if (storeViolationCondition(message)) analyzeViolationCondition(message.senderId)
@@ -341,23 +349,28 @@ class PredicateBlockBehavior(
           // (then it was not analyzed at all), so here it is checked instead of assumed.
           val reportReceived = violations.isNotEmpty()
           if (reportReceived) reportReceivedViolations = true
-          result.path
-            ?.takeIf { !it.reachedReceivedViolation || reportReceived }
-            ?.let {
-              pathViolations += it.condition
-              violationRecords +=
-                DssPathViolation(
-                  it.condition,
-                  it.edges,
-                  it.reachedReceivedViolation,
-                  if (it.reachedReceivedViolation) received else emptyList(),
-                )
-            }
+          val path =
+            result.path
+              ?.takeIf { !it.reachedReceivedViolation || reportReceived }
+              ?.let { newPathFrom(startState, it, violationCondition) }
+          if (path != null) {
+            pathViolations += path.condition
+            violationRecords +=
+              DssPathViolation(
+                path.condition,
+                path.edges,
+                path.reachedReceivedViolation,
+                if (path.reachedReceivedViolation) received else emptyList(),
+              )
+          }
         }
       }
     }
 
-    if (!targetReached) return AnalysisResult(summaries, null)
+    if (!targetReached) {
+      pathsPending = false
+      return AnalysisResult(summaries, null)
+    }
     if (usesPathViolations) {
       val condition = accumulatePathViolations(pathViolations)
       return AnalysisResult(summaries, condition)
@@ -395,6 +408,7 @@ class PredicateBlockBehavior(
     start: Summary,
     violationCondition: Expr<BoolType>?,
     keepSpecificationTargets: Boolean = true,
+    recordInvariants: Boolean = true,
   ): RunResult {
     val extraction =
       extractBlockXcfa(
@@ -432,13 +446,18 @@ class PredicateBlockBehavior(
       )
     }
     val proof = result.asSafe().proof
-    invariantsByStart[start.state] =
-      proof
-        .getPartitions()
-        .entries
-        .mapNotNull { (clone, states) -> extraction.originalLocations[clone]?.let { it to states } }
-        .groupBy({ it.first }, { it.second })
-        .mapValues { (_, states) -> states.flatten().map { it.toExpr() }.distinct() }
+    // Witness invariants need a start state that covers the block's entries
+    if (recordInvariants) {
+      invariantsByStart[start.state] =
+        proof
+          .getPartitions()
+          .entries
+          .mapNotNull { (clone, states) ->
+            extraction.originalLocations[clone]?.let { it to states }
+          }
+          .groupBy({ it.first }, { it.second })
+          .mapValues { (_, states) -> states.flatten().map { it.toExpr() }.distinct() }
+    }
     val reached = proof.getPartitions().values.flatten().map { it.toExpr() }
     return RunResult.Safe(
       normalize(packPostcondition(result, extraction.exitLocation)),
@@ -486,13 +505,42 @@ class PredicateBlockBehavior(
   }
 
   /**
+   * [found], or if its path is already known, a path from [start] outside all known ones (null if
+   * there is none). A run yields one path, and its predecessors may refute every path sent so far,
+   * so a known path must not hide the others; [pathsPending] makes the block look again.
+   */
+  private fun newPathFrom(
+    start: Summary,
+    found: PathViolation,
+    violationCondition: Expr<BoolType>?,
+  ): PathViolation? {
+    if (found.condition !in pathViolationsSoFar) return found
+    val exclusions =
+      pathViolationsSoFar.map {
+        checkNotNull(withoutAuxVars(it) { condition -> !operators.isUnsat(condition) }) {
+          "Block ${block.id}: a path violation condition ties nondeterministic values to program " +
+            "variables, so the known error paths cannot be excluded: $it"
+        }
+      }
+    val outside = start.copy(state = And(start.state, Not(Or(exclusions))))
+    val next =
+      (run(outside, violationCondition, recordInvariants = false) as? RunResult.Unsafe)?.path
+        ?: return null
+    check(next.condition !in pathViolationsSoFar) {
+      "Block ${block.id}: an excluded error path recurred: ${next.condition}"
+    }
+    return next
+  }
+
+  /**
    * The disjunction of [new] and all earlier path violation conditions: predecessors keep only each
    * sender's last condition, so the growing union keeps refuted paths from recurring.
    */
   private fun accumulatePathViolations(new: Collection<Expr<BoolType>>): Expr<BoolType>? {
-    if (new.isEmpty()) return null
     val before = pathViolationsSoFar.size
     pathViolationsSoFar += new
+    pathsPending = !block.isRoot && pathViolationsSoFar.size > before
+    if (new.isEmpty()) return null
     DssTrace.event(
       "path-vcs",
       "actor" to block.id,
