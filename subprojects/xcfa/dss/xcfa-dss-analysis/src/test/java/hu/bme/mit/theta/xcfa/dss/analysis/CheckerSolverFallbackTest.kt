@@ -70,6 +70,23 @@ class CheckerSolverFallbackTest {
   }
 
   @Test
+  fun `the no-argument check reaches the checker as a no-argument check`() {
+    // Like the CEGAR checker: check() uses its initial precision, check(null) fails
+    val ownPrecision: CheckerFactory = {
+      object :
+        SafetyChecker<LocationInvariants, Trace<XcfaState<PtrState<*>>, XcfaAction>, XcfaPrec<*>> {
+        override fun check(input: XcfaPrec<*>?) = throw IllegalStateException("null precision")
+
+        override fun check() = result
+      }
+    }
+    val statistics = DssSolverStatistics()
+    val checker = withCheckerSolverFallback(ownPrecision, crashing.factory, statistics)(xcfa)
+    assertSame(result, checker.check())
+    assertEquals(0, statistics.checkerFailed.get())
+  }
+
+  @Test
   fun `a failure of the fallback propagates with the first failure suppressed`() {
     val statistics = DssSolverStatistics()
     val checker = withCheckerSolverFallback(unknown.factory, crashing.factory, statistics)(xcfa)

@@ -42,10 +42,25 @@ fun withCheckerSolverFallback(
 
     override fun check(
       input: XcfaPrec<*>?
+    ): SafetyResult<LocationInvariants, Trace<XcfaState<PtrState<*>>, XcfaAction>> =
+      checkWithFallback {
+        it.check(input)
+      }
+
+    // The no-argument check lets a checker use its own initial precision; check(null) does not
+    override fun check():
+      SafetyResult<LocationInvariants, Trace<XcfaState<PtrState<*>>, XcfaAction>> =
+      checkWithFallback {
+        it.check()
+      }
+
+    private fun checkWithFallback(
+      run:
+        (XcfaChecker) -> SafetyResult<LocationInvariants, Trace<XcfaState<PtrState<*>>, XcfaAction>>
     ): SafetyResult<LocationInvariants, Trace<XcfaState<PtrState<*>>, XcfaAction>> {
       val failure =
         try {
-          return first.check(input)
+          return run(first)
         } catch (e: InterruptedException) {
           throw e
         } catch (e: Exception) {
@@ -54,7 +69,7 @@ fun withCheckerSolverFallback(
       statistics.checkerFailed.incrementAndGet()
       return try {
         ran = withSolverConstructionLock { fallback(xcfa) }
-        ran.check(input).also {
+        run(ran).also {
           statistics.checkerFallbackDecided.incrementAndGet()
           statistics.report()
         }
