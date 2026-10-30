@@ -154,22 +154,24 @@ class MemoryFunctionsPass(val parseContext: ParseContext, val uniqueWarningLogge
     // has to be driven by the object's *cell layout*, not by an element width: cells are one per
     // scalar member whatever its C width, so a struct of four `unsigned char` is four cells in four
     // bytes, not one.
-    aggregateOf(dst)?.let { (pointee, cells, bytes) ->
-      if (literalValue(invoke.params[3]) != bytes) return giveUp(invoke)
-      val stmts =
-        (0 until cells).map { i ->
-          val cellType = cellTypeAt(pointee, i)
-          MemoryAssignStmt.create(
-            deref(dst, indexOf(i, dst), cellType),
-            cast(deref(src, indexOf(i, src), cellType), cellType.smtType),
-          )
-        }
-      return SequenceLabel(
-        stmts.map { StmtLabel(it, metadata = invoke.metadata) } + returns(invoke, dst)
-      )
-    }
+    if (!byteModel())
+      aggregateOf(dst)?.let { (pointee, cells, bytes) ->
+        if (literalValue(invoke.params[3]) != bytes) return giveUp(invoke)
+        val stmts =
+          (0 until cells).map { i ->
+            val cellType = cellTypeAt(pointee, i)
+            MemoryAssignStmt.create(
+              deref(dst, indexOf(i, dst), cellType),
+              cast(deref(src, indexOf(i, src), cellType), cellType.smtType),
+            )
+          }
+        return SequenceLabel(
+          stmts.map { StmtLabel(it, metadata = invoke.metadata) } + returns(invoke, dst)
+        )
+      }
 
-    val element = elementOf(dst) ?: elementOf(src) ?: return giveUp(invoke)
+    val element =
+      if (byteModel()) byteCell() else elementOf(dst) ?: elementOf(src) ?: return giveUp(invoke)
     val count = elementCount(invoke.params[3], element) ?: return giveUp(invoke)
 
     val stmts =
@@ -195,23 +197,24 @@ class MemoryFunctionsPass(val parseContext: ParseContext, val uniqueWarningLogge
     // matching branch in [copy]. Only the zero fill is claimed: a non-zero byte means something
     // different in every cell whose width is not one byte, and there is no honest cell value for
     // it.
-    aggregateOf(dst)?.let { (pointee, cells, bytes) ->
-      if (literalValue(value) != BigInteger.ZERO) return giveUp(invoke)
-      if (literalValue(invoke.params[3]) != bytes) return giveUp(invoke)
-      val stmts =
-        (0 until cells).map { i ->
-          val cellType = cellTypeAt(pointee, i)
-          MemoryAssignStmt.create(
-            deref(dst, indexOf(i, dst), cellType),
-            cast(cellType.nullValue, cellType.smtType),
-          )
-        }
-      return SequenceLabel(
-        stmts.map { StmtLabel(it, metadata = invoke.metadata) } + returns(invoke, dst)
-      )
-    }
+    if (!byteModel())
+      aggregateOf(dst)?.let { (pointee, cells, bytes) ->
+        if (literalValue(value) != BigInteger.ZERO) return giveUp(invoke)
+        if (literalValue(invoke.params[3]) != bytes) return giveUp(invoke)
+        val stmts =
+          (0 until cells).map { i ->
+            val cellType = cellTypeAt(pointee, i)
+            MemoryAssignStmt.create(
+              deref(dst, indexOf(i, dst), cellType),
+              cast(cellType.nullValue, cellType.smtType),
+            )
+          }
+        return SequenceLabel(
+          stmts.map { StmtLabel(it, metadata = invoke.metadata) } + returns(invoke, dst)
+        )
+      }
 
-    val element = elementOf(dst) ?: return giveUp(invoke)
+    val element = if (byteModel()) byteCell() else elementOf(dst) ?: return giveUp(invoke)
     val count = elementCount(invoke.params[3], element) ?: return giveUp(invoke)
 
     // `memset` writes a *byte* into every byte. Setting whole elements to it is the same thing only
@@ -534,6 +537,15 @@ class MemoryFunctionsPass(val parseContext: ParseContext, val uniqueWarningLogge
       else -> null
     }
 
+  /**
+   * Under the bytes model an offset counts bytes, so the copy and fill go byte by byte -- exactly
+   * what C specifies, for any pointee. Writing whole elements at index `i` would put element `i` at
+   * byte `i`, overlapping its neighbours.
+   */
+  private fun byteModel(): Boolean = parseContext.memoryModel.byteAddressed()
+
+  private fun byteCell(): CComplexType = CUnsignedChar(null, parseContext)
+
   /** The index of the i-th element, in the type the dereference's offset is built at. */
   private fun indexOf(i: Int, pointer: Expr<*>): Expr<*> =
     CComplexType.getUnsignedLong(parseContext).getValue("$i")
@@ -542,6 +554,7 @@ class MemoryFunctionsPass(val parseContext: ParseContext, val uniqueWarningLogge
   /** A fill this pass can only model as a loop: scalar element, but the byte count is symbolic. */
   private fun needsLoop(invoke: InvokeLabel): Boolean {
     if (invoke.params.size < 4) return false
+    if (byteModel()) return literalValue(invoke.params[3]).let { it == null || it > MAX_BYTES }
     if (aggregateOf(invoke.params[1]) != null) return false
     val element = elementOf(invoke.params[1]) ?: return false
     if (literalValue(invoke.params[3]) != null) return false // the constant path handles it better
@@ -579,7 +592,7 @@ class MemoryFunctionsPass(val parseContext: ParseContext, val uniqueWarningLogge
     val dst = invoke.params[1]
     val value = invoke.params[2]
     val bytes = invoke.params[3]
-    val element = elementOf(dst) ?: return
+    val element = if (byteModel()) byteCell() else elementOf(dst) ?: return
     val width = element.width() / 8
     if (width <= 0) return
     val zero = literalValue(value)?.equals(BigInteger.ZERO) == true
@@ -673,3 +686,6 @@ class MemoryFunctionsPass(val parseContext: ParseContext, val uniqueWarningLogge
 
 /** Enough for any `sizeof` a benchmark copies; past it, a loop would be the honest model. */
 private const val MAX_ELEMENTS = 4096L
+
+/** Past this a byte-model fill is a loop rather than straight-line stores. */
+private val MAX_BYTES: BigInteger = BigInteger.valueOf(MAX_ELEMENTS)

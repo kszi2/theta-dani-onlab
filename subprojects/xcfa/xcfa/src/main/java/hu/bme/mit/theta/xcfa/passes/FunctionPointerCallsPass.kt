@@ -27,6 +27,8 @@ import hu.bme.mit.theta.core.type.booltype.BoolExprs.Not
 import hu.bme.mit.theta.frontend.ParseContext
 import hu.bme.mit.theta.frontend.transformation.model.declaration.FunctionIds
 import hu.bme.mit.theta.frontend.transformation.model.types.complex.CComplexType
+import hu.bme.mit.theta.frontend.transformation.model.types.complex.compound.CPointer
+import hu.bme.mit.theta.frontend.transformation.model.types.complex.compound.CStruct
 import hu.bme.mit.theta.xcfa.model.*
 import hu.bme.mit.theta.xcfa.utils.getFlatLabels
 
@@ -45,8 +47,9 @@ import hu.bme.mit.theta.xcfa.utils.getFlatLabels
  * total (a pointer that matches no candidate -- e.g. NULL -- would be undefined behavior in C).
  *
  * The candidate set is the set of functions whose address is taken anywhere in the program (see
- * [FunctionIds]), restricted to those actually defined in this XCFA with a matching arity. This
- * must run before [InlineProceduresPass] so that the direct calls it emits are inlined normally.
+ * [FunctionIds]), restricted to those actually defined in this XCFA with a matching arity and no
+ * struct-pointer parameter that contradicts the call's argument (see [argumentsFit]). This must run
+ * before [InlineProceduresPass] so that the direct calls it emits are inlined normally.
  *
  * Programs that never call through a function pointer contain no marker call and are left
  * bit-for-bit unchanged.
@@ -108,7 +111,9 @@ class FunctionPointerCallsPass(
       FunctionIds.getAll()
         .filter { (name, _) ->
           builder.parent.getProcedures().any { proc ->
-            proc.name == name && proc.getParams().size == arguments.size + 1
+            proc.name == name &&
+              proc.getParams().size == arguments.size + 1 &&
+              argumentsFit(proc.getParams().drop(1).map { it.first }, arguments)
           }
         }
         .map { (name, id) ->
@@ -156,6 +161,22 @@ class FunctionPointerCallsPass(
     )
     return branches
   }
+
+  /**
+   * False when some argument is a pointer to a struct and the parameter a pointer to a different
+   * one: calling such a function through this pointer is undefined (C11 6.5.2.2p9), so it is not a
+   * target. The pointer's own parameter types are not kept, so the arguments stand in for them;
+   * anything less certain (`void *`, scalars, incomplete structs) keeps the candidate.
+   */
+  private fun argumentsFit(params: List<VarDecl<*>>, arguments: List<Expr<*>>): Boolean =
+    params.zip(arguments).all { (param, argument) ->
+      val paramStruct = pointeeStruct(CComplexType.getType(param.ref, parseContext))
+      val argStruct = pointeeStruct(CComplexType.getType(argument, parseContext))
+      paramStruct == null || argStruct == null || paramStruct == argStruct
+    }
+
+  private fun pointeeStruct(type: CComplexType?): CStruct? =
+    ((type as? CPointer)?.embeddedType as? CStruct)?.takeIf { it.fields.isNotEmpty() }
 
   private fun havocReturnValue(returnValue: Expr<*>, invokeLabel: InvokeLabel): XcfaLabel =
     StmtLabel(

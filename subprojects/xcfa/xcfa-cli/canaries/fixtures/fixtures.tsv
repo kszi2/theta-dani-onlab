@@ -85,3 +85,4 @@ mutex_errorcheck_kind.c	efficient	LP64	SAFE	PTHREAD_MUTEX_ERRORCHECK resolves to
 pthread_create_pointer_sum.c	efficient	LP64	SAFE	pthread_create through `t + i` keys the same per-element handle as `&t[i]`
 split_pointer_compare.c	efficient	LP64	SAFE	a split pointer compares equal to the same address written as pointer + offset
 split_pointer_compare_unsafe.c	efficient	LP64	UNSAFE	a split pointer still compares unequal to a different pointer + offset
+fnptr_struct_type_dispatch.c	efficient	LP64	SAFE	function-pointer dispatch skips candidates whose struct-pointer parameter contradicts the argument

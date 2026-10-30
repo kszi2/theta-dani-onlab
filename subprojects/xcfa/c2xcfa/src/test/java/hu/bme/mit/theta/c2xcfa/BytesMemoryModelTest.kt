@@ -16,12 +16,17 @@
 package hu.bme.mit.theta.c2xcfa
 
 import hu.bme.mit.theta.common.logging.NullLogger
+import hu.bme.mit.theta.core.stmt.MemoryAssignStmt
 import hu.bme.mit.theta.frontend.ParseContext
 import hu.bme.mit.theta.frontend.transformation.ArchitectureConfig.ArithmeticType
 import hu.bme.mit.theta.frontend.transformation.ArchitectureConfig.MemoryModelType
 import hu.bme.mit.theta.xcfa.ErrorDetection
 import hu.bme.mit.theta.xcfa.XcfaProperty
+import hu.bme.mit.theta.xcfa.model.StmtLabel
+import hu.bme.mit.theta.xcfa.model.XCFA
+import hu.bme.mit.theta.xcfa.utils.getFlatLabels
 import org.junit.jupiter.api.Assertions.assertDoesNotThrow
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 
 /**
@@ -36,17 +41,47 @@ import org.junit.jupiter.api.Test
  */
 class BytesMemoryModelTest {
 
-  private fun buildBytes(src: String) {
+  private fun buildBytes(src: String): XCFA {
     val parseContext = ParseContext()
     parseContext.arithmetic = ArithmeticType.bitvector
     parseContext.memoryModel = MemoryModelType.bytes
-    getXcfaFromC(
-      src.byteInputStream(),
-      parseContext,
-      false,
-      XcfaProperty(ErrorDetection.ERROR_LOCATION),
-      NullLogger.getInstance(),
-    )
+    return getXcfaFromC(
+        src.byteInputStream(),
+        parseContext,
+        false,
+        XcfaProperty(ErrorDetection.ERROR_LOCATION),
+        NullLogger.getInstance(),
+      )
+      .first
+  }
+
+  /** The offsets of every memory write whose value is a literal zero. */
+  private fun zeroWriteOffsets(xcfa: XCFA): Set<String> =
+    xcfa.procedures
+      .flatMap { proc -> proc.edges.flatMap { it.getFlatLabels() } }
+      .mapNotNull { (it as? StmtLabel)?.stmt as? MemoryAssignStmt<*, *, *> }
+      .filter { it.expr.toString() == "#b00000000" }
+      .map { it.deref.offset.toString() }
+      .toSet()
+
+  @Test
+  fun memsetOfAStructWritesEveryByteOnce() {
+    // Five 8-byte members: the fill has to reach bytes 0..39. Writing member i at offset i (the
+    // cell index of the typed models) covered bytes 0..11 only.
+    val xcfa =
+      buildBytes(
+        """
+        void *memset(void *s, int c, unsigned long n);
+        struct S { long a, b, c, d, e; };
+        int main() {
+          struct S s;
+          memset(&s, 0, sizeof(s));
+          return ((unsigned char *) &s)[39];
+        }
+        """
+          .trimIndent()
+      )
+    assertEquals(40, zeroWriteOffsets(xcfa).size)
   }
 
   @Test

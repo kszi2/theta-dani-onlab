@@ -130,6 +130,10 @@ import org.sosy_lab.java_smt.api.NumeralFormula.RationalFormula;
 final class JavaSMTExprTransformer {
 
     private static final int CACHE_SIZE = 1000;
+
+    /** Name prefix of the UF a {@link Dereference} becomes; read back by the term transformer. */
+    static final String DEREF_PREFIX = "deref-";
+
     private final BooleanFormulaManager booleanFormulaManager;
     private final IntegerFormulaManager integerFormulaManager;
     private final RationalFormulaManager rationalFormulaManager;
@@ -1224,7 +1228,7 @@ final class JavaSMTExprTransformer {
                 context.getFormulaManager()
                         .getUFManager()
                         .declareUF(
-                                "deref-" + sortName.replaceAll(" ", "_"),
+                                DEREF_PREFIX + sortName.replaceAll(" ", "_"),
                                 transformer.toSort(expr.getType()),
                                 List.of(sort, sort, constSort));
 

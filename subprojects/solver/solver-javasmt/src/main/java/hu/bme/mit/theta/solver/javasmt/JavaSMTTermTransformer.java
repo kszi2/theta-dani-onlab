@@ -42,6 +42,7 @@ import hu.bme.mit.theta.core.decl.ParamDecl;
 import hu.bme.mit.theta.core.type.Expr;
 import hu.bme.mit.theta.core.type.LitExpr;
 import hu.bme.mit.theta.core.type.Type;
+import hu.bme.mit.theta.core.type.anytype.Dereference;
 import hu.bme.mit.theta.core.type.arraytype.ArrayInitExpr;
 import hu.bme.mit.theta.core.type.arraytype.ArrayLitExpr;
 import hu.bme.mit.theta.core.type.arraytype.ArrayType;
@@ -62,6 +63,7 @@ import hu.bme.mit.theta.core.type.fptype.FpType;
 import hu.bme.mit.theta.core.type.functype.FuncExprs;
 import hu.bme.mit.theta.core.type.functype.FuncType;
 import hu.bme.mit.theta.core.type.inttype.IntLitExpr;
+import hu.bme.mit.theta.core.type.inttype.IntType;
 import hu.bme.mit.theta.core.utils.BvUtils;
 import hu.bme.mit.theta.core.utils.TypeUtils;
 import java.math.BigInteger;
@@ -714,6 +716,9 @@ final class JavaSMTTermTransformer {
             return otherFuncs.get(key3).apply(f, args, model, vars);
         } else if (otherFuncs.containsKey(key4)) {
             return otherFuncs.get(key4).apply(f, args, model, vars);
+        } else if (funcDecl.getName().startsWith(JavaSMTExprTransformer.DEREF_PREFIX)
+                && args.size() == 3) {
+            return transformDereference(f, args, model, vars);
         } else {
             final var paramExprs =
                     args.stream().map((Formula term) -> (Expr) toExpr(term)).toList();
@@ -742,6 +747,23 @@ final class JavaSMTTermTransformer {
 
             return FuncExprs.App(funcExpr, paramExprs);
         }
+    }
+
+    /**
+     * Reads back the UF that {@link JavaSMTExprTransformer} declares for a {@link Dereference}. As
+     * a plain function application it would get a fresh constant of the same name, which the symbol
+     * table refuses once the term is sent to the solver again (e.g. as a predicate).
+     */
+    private Expr<?> transformDereference(
+            final Formula f,
+            final List<Formula> args,
+            final Model model,
+            final List<Decl<?>> vars) {
+        final Expr<Type> array = (Expr<Type>) transform(args.get(0), model, vars);
+        final Expr<Type> offset = (Expr<Type>) transform(args.get(1), model, vars);
+        final Expr<IntType> uniqueness = (Expr<IntType>) transform(args.get(2), model, vars);
+        final Type type = transformType(context.getFormulaManager().getFormulaType(f));
+        return Dereference.of(array, offset, type).withUniquenessExpr(uniqueness);
     }
 
     private <P extends Type, R extends Type> FuncType<P, R> getFuncType(

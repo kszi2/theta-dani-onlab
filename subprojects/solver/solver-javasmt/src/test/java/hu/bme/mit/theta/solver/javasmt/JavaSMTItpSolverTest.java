@@ -17,6 +17,7 @@ package hu.bme.mit.theta.solver.javasmt;
 
 import static hu.bme.mit.theta.core.decl.Decls.Const;
 import static hu.bme.mit.theta.core.decl.Decls.Param;
+import static hu.bme.mit.theta.core.type.anytype.Exprs.Dereference;
 import static hu.bme.mit.theta.core.type.booltype.BoolExprs.Bool;
 import static hu.bme.mit.theta.core.type.booltype.BoolExprs.Forall;
 import static hu.bme.mit.theta.core.type.booltype.BoolExprs.Imply;
@@ -143,6 +144,39 @@ public final class JavaSMTItpSolverTest {
         System.out.println(itp.eval(A));
         System.out.println("----------");
         Assertions.assertTrue(ExprUtils.getVars(itp.eval(A)).size() <= 3);
+    }
+
+    @MethodSource("operations")
+    @ParameterizedTest(name = "solver: {0}")
+    public void testDereferenceInterpolantIsReusable(Solvers solver, ItpSolver itpSolver) {
+        initJavaSMTItpSolverTest(solver, itpSolver);
+        final Expr<IntType> cell = Dereference(a, b, Int()).withUniquenessExpr(Int(0));
+        final Expr<BoolType> first = dereferenceInterpolant(itpSolver, cell, 1, 2);
+        final Expr<BoolType> second = dereferenceInterpolant(itpSolver, cell, 5, 6);
+
+        // Both interpolants are predicates over the memory cell, as CEGAR collects them across
+        // refinements; handing them back must reuse one function symbol, not declare two clashing.
+        final ItpMarker C = itpSolver.createMarker();
+        itpSolver.add(C, first);
+        itpSolver.add(C, second);
+        itpSolver.check();
+        Assertions.assertEquals(SolverStatus.UNSAT, itpSolver.getStatus());
+    }
+
+    private Expr<BoolType> dereferenceInterpolant(
+            ItpSolver itpSolver, Expr<IntType> cell, int inA, int inB) {
+        itpSolver.push();
+        final ItpMarker A = itpSolver.createMarker();
+        final ItpMarker B = itpSolver.createMarker();
+        itpSolver.add(A, Eq(cell, c));
+        itpSolver.add(A, Eq(c, Int(inA)));
+        itpSolver.add(B, Eq(cell, Int(inB)));
+        itpSolver.check();
+        Assertions.assertEquals(SolverStatus.UNSAT, itpSolver.getStatus());
+        final Expr<BoolType> itp =
+                itpSolver.getInterpolant(itpSolver.createBinPattern(A, B)).eval(A);
+        itpSolver.pop();
+        return itp;
     }
 
     @MethodSource("operations")
