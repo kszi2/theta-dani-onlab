@@ -153,34 +153,43 @@ fun getDssChecker(
   dssConfig.checkerBackends
     .firstOrNull { it !in DSS_CHECKER_BACKENDS }
     ?.let { throw IllegalArgumentException("--dss-checker-backends: $it cannot check DSS blocks") }
+  require(dssConfig.checkerBudgetMs >= 0) { "--dss-checker-budget cannot be negative" }
+  require(
+    dssConfig.checkerBudgetMs == 0L ||
+      dssConfig.checkerSelection == DssCheckerSelectionMethod.PRIORITY
+  ) {
+    "--dss-checker-budget orders the checkers itself, so it needs --dss-checker-selection PRIORITY"
+  }
   val blockLogger = BlockAnalysisLogger(logger)
   val solver =
-    if (dssConfig.executor == DssExecutor.CONCURRENT) CONCURRENT_DSS_SOLVER else DEFAULT_DSS_SOLVER
+    dssConfig.solver
+      ?: if (dssConfig.executor == DssExecutor.CONCURRENT) CONCURRENT_DSS_SOLVER
+      else DEFAULT_DSS_SOLVER
   // The counterexample monitor's registry is global: only concurrent block checkers go without it
   val cexMonitor =
     if (dssConfig.executor == DssExecutor.CONCURRENT) CexMonitorOptions.DISABLE
     else CexMonitorOptions.CHECK
-  fun checkerFor(backend: Backend): CheckerFactory {
-    val blockConfig =
-      if (backend == Backend.CEGAR)
-        getDefaultPredCegarConfig(dssConfig.cegarDomain.domain, solver, cexMonitor)
-      else getDefaultConfig(backend)
-    return { blockXcfa: XCFA ->
-      if (backend == Backend.CEGAR) {
-        val cegar = getCegarChecker(blockXcfa, mcm, parseContext, blockConfig, blockLogger)
-        if (dssConfig.cegarDomain == DssCegarDomain.EXPL) adaptExplChecker(cegar) else cegar
-      } else
-        adaptBoundedChecker(getBoundedChecker(blockXcfa, parseContext, blockConfig, blockLogger))
+  val checkers: List<CheckerFactory> =
+    blockCheckers(dssConfig, solver) { backend, domain, blockSolver ->
+      val blockConfig =
+        if (backend == Backend.CEGAR)
+          getDefaultPredCegarConfig(domain.domain, blockSolver ?: solver, cexMonitor)
+        else getDefaultConfig(backend).also { config -> blockSolver?.let { config.useSolver(it) } }
+      return@blockCheckers { blockXcfa: XCFA ->
+        if (backend == Backend.CEGAR) {
+          val cegar = getCegarChecker(blockXcfa, mcm, parseContext, blockConfig, blockLogger)
+          if (domain == DssCegarDomain.EXPL) adaptExplChecker(cegar) else cegar
+        } else
+          adaptBoundedChecker(getBoundedChecker(blockXcfa, parseContext, blockConfig, blockLogger))
+      }
     }
-  }
-  val checkers: List<CheckerFactory> = dssConfig.checkerBackends.map(::checkerFor)
   val selectionStrategy: DssCheckerSelectionStrategy =
     when (dssConfig.checkerSelection) {
       DssCheckerSelectionMethod.ROUND_ROBIN -> RoundRobinCheckerSelectionStrategy()
       DssCheckerSelectionMethod.PRIORITY -> PriorityCheckerSelectionStrategy()
       DssCheckerSelectionMethod.FASTEST -> FastestCheckerSelectionStrategy()
     }
-  val checkerRoster = DssCheckerRoster(checkers, selectionStrategy)
+  val checkerRoster = DssCheckerRoster(checkers, selectionStrategy, dssConfig.checkerBudgetMs)
   val dssSolverFactory = SolverManager.resolveSolverFactory(solver)
   val behaviors = ConcurrentHashMap<String, DssBlockBehavior>()
   val behaviorFor = { block: Block ->
@@ -192,6 +201,7 @@ fun getDssChecker(
         useGlobalPredicatePool = dssConfig.globalPredicatePool,
         resetPrecisionForEveryRun = dssConfig.resetPrecisionForEveryRun,
         reuseBlockPrecision = dssConfig.reuseBlockPrecision,
+        blockLocalPool = dssConfig.blockLocalPool,
         checkerFallback = true,
         solverFactory = dssSolverFactory,
       )

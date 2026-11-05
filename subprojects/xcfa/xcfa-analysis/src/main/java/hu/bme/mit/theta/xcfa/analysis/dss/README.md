@@ -40,6 +40,15 @@ Only single-procedure programs and error-location reachability are supported.
 | `--dss-global-predicate-pool` | `true` | Seed every block's precision with all assume conditions of the program |
 | `--dss-reset-precision` | off | Start every analysis with the initial precision (CPAchecker's `resetPrecisionForEveryRun`) |
 | `--dss-reuse-block-precision` | off | Add the predicates of a block's earlier CEGAR runs to its next runs |
+| `--dss-block-local-pool` | off | Seed a block only with the pool conditions over at least one of its variables |
+| `--dss-checker-budget` | `0` | Milliseconds each checker gets in turn, 4-fold after every round (`0`: no budget); needs `PRIORITY` |
+| `--dss-expl-checker` | off | Add an `EXPL` `CEGAR` checker after `--dss-checker-backends` |
+| `--dss-solver` | `Z3` | Solver of the block checkers and of DSS's own queries (`Z3:new` for `CONCURRENT`) |
+| `--dss-fallback-solver` | none | A block checker that throws is retried once with this solver |
+
+A checker over its budget is stopped at its next solver call (`DssBudget.kt`) and retried in the
+next round, so a block never counts as safe unless some checker finished it. The checker that
+finished a block's last analysis starts its next one.
 
 The executor defaults to `SEQUENTIAL` because the default legacy Z3 binding crashes natively when
 used by several threads. `Z3:new` is thread-safe, but its interpolation fails on some C arithmetic.
@@ -99,3 +108,6 @@ violation conditions while refinement finds new predicates.
 * A solver query DSS itself cannot decide gives an unknown verdict.
 * Witness invariants appear only at C statements that start an XCFA edge; without every block's
   records, an UNSAFE verdict has an empty trace.
+* Witness invariants keep only integer and Boolean conjuncts over the variables in scope at their
+  statement (globals, and the locals of the function its labels use); bit-vector, floating-point
+  and memory terms, block-scoped locals and k-induction proofs contribute nothing.

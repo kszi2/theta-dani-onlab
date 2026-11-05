@@ -55,6 +55,11 @@ class XcfaCliDssTest {
           listOf("--dss-checker-backends", "CEGAR,KIND", "--dss-checker-selection", "PRIORITY"),
           listOf("--dss-checker-backends", "CEGAR,KIND", "--dss-checker-selection", "FASTEST"),
           listOf("--dss-checker-backends", "CEGAR,BMC", "--dss-checker-selection", "ROUND_ROBIN"),
+          listOf("--dss-checker-backends", "KIND,CEGAR", "--dss-checker-budget", "60000"),
+          listOf("--dss-expl-checker", "--dss-checker-budget", "60000"),
+          listOf("--dss-checker-backends", "CEGAR,KIND", "--dss-fallback-solver", "Z3:new"),
+          listOf("--dss-solver", "Z3"),
+          listOf("--dss-block-local-pool"),
         )
         .flatMap { o -> listOf("safe", "unsafe").map { Arguments.of(o, it) } }
         .stream()
@@ -90,6 +95,13 @@ class XcfaCliDssTest {
   }
 
   @Test
+  fun `a checker budget without priority selection is rejected`() {
+    val (output, thrown) =
+      runDss("safe", "--dss-checker-budget", "1000", "--dss-checker-selection", "FASTEST")
+    assertTrue(thrown != null && "--dss-checker-selection PRIORITY" in output) { output }
+  }
+
+  @Test
   fun `properties a pass reduces to error-location reachability are checked`() {
     assertTrue(
       dssVerdict("overflow_unsafe", property = "no-overflow").contains("SafetyResult Unsafe")
@@ -122,6 +134,34 @@ class XcfaCliDssTest {
     assertTrue(witness.contains("entry_type: 'invariant_set'")) { witness }
     assertTrue(witness.contains("location_invariant")) { witness }
     assertTrue(verdictWithWitness("loop", witness).contains("SafetyResult Safe"))
+  }
+
+  /** After inlining, every C function's statements see the variables of all the others. */
+  @Test
+  fun `invariants name only the variables in scope at their statement`() {
+    val witness = dssWitness("inlined", "SEQUENTIAL")
+    val invariants =
+      Regex("""line: (\d+)\s+column: \d+\s+value: '(.*?)'\s+format""", RegexOption.DOT_MATCHES_ALL)
+        .findAll(witness)
+        .map { it.groupValues[1].toInt() to it.groupValues[2] }
+        .toList()
+    assertTrue(invariants.isNotEmpty()) { witness }
+    for ((line, value) in invariants) {
+      // `check` spans lines 4-9 of inlined.c, `main` lines 11-19
+      val foreign = if (line < 10) listOf("x", "n") else listOf("c", "d")
+      assertTrue(foreign.none { Regex("""\b$it\b""").containsMatchIn(value) }) { witness }
+    }
+    assertTrue(verdictWithWitness("inlined", witness).contains("SafetyResult Safe"))
+  }
+
+  /**
+   * Bit-vector terms do not print as C with their meaning, so their conjuncts are left out. Not
+   * validated: the STABLE portfolio does not terminate on this unbounded loop.
+   */
+  @Test
+  fun `a SAFE run over bit-vectors still writes a correctness witness`() {
+    val witness = dssWitness("bitwise", "SEQUENTIAL")
+    assertTrue(witness.contains("entry_type: 'invariant_set'")) { witness }
   }
 
   /** Each worker process only knows its own blocks, so the trace is stitched from all of them. */
