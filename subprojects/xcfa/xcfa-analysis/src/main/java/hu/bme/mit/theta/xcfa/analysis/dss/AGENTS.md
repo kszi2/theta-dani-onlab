@@ -37,6 +37,9 @@ message-passing network with its executors. The `--backend DSS` wiring lives in 
 - Message and witness contents must survive `DssExprCodec` (`PROCESS` executor): only program
   variables and `DssAuxVars`; locations travel by index. New fields need matching changes in
   `DssProcessExecutor.kt`.
+- A bounded checker's proof is over program variables only when interpolated
+  (`--dss-interpolate-bounded-proofs`); otherwise it has fresh, implicitly existential variables,
+  unique to each proof, so solver checks over several such states stay sound but are incomplete.
 
 ## Change recipes
 - New label kind in a block: violation conditions come from `WpState.wep` on `label.toStmt()`;

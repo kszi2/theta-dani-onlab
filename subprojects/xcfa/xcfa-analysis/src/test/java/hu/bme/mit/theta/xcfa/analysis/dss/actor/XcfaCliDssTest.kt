@@ -60,6 +60,9 @@ class XcfaCliDssTest {
           listOf("--dss-checker-backends", "CEGAR,KIND", "--dss-fallback-solver", "Z3:new"),
           listOf("--dss-solver", "Z3"),
           listOf("--dss-block-local-pool"),
+          listOf("--dss-checker-backends", "KIND"),
+          listOf("--dss-checker-backends", "KIND", "--dss-interpolate-bounded-proofs", "false"),
+          listOf("--dss-checker-backends", "BMC"),
         )
         .flatMap { o -> listOf("safe", "unsafe").map { Arguments.of(o, it) } }
         .stream()
@@ -132,6 +135,14 @@ class XcfaCliDssTest {
   fun `a SAFE run writes location invariants that Theta validates`() {
     val witness = dssWitness("loop", "SEQUENTIAL")
     assertTrue(witness.contains("entry_type: 'invariant_set'")) { witness }
+    assertTrue(witness.contains("location_invariant")) { witness }
+    assertTrue(verdictWithWitness("loop", witness).contains("SafetyResult Safe"))
+  }
+
+  /** Interpolation turns k-induction proofs into invariants over the program variables. */
+  @Test
+  fun `a SAFE run of k-induction blocks writes location invariants that Theta validates`() {
+    val witness = dssWitness("loop", "SEQUENTIAL", checkers = "KIND")
     assertTrue(witness.contains("location_invariant")) { witness }
     assertTrue(verdictWithWitness("loop", witness).contains("SafetyResult Safe"))
   }
@@ -230,8 +241,12 @@ class XcfaCliDssTest {
     }
   }
 
-  /** The SV-COMP witness of a DSS run on [program] with emergent27's settings. */
-  private fun dssWitness(program: String, executor: String): String {
+  /** The SV-COMP witness of a DSS run on [program] with emergent27's settings and [checkers]. */
+  private fun dssWitness(
+    program: String,
+    executor: String,
+    checkers: String = "CEGAR,KIND",
+  ): String {
     val temp = createTempDirectory()
     try {
       main(
@@ -244,7 +259,7 @@ class XcfaCliDssTest {
           "--dss-decomposition",
           "MIN_CUT_ABSORB_SELF_LOOPS",
           "--dss-checker-backends",
-          "CEGAR,KIND",
+          checkers,
           "--dss-checker-selection",
           "PRIORITY",
           "--property",
