@@ -20,8 +20,10 @@ message-passing network with its executors. The `--backend DSS` wiring lives in 
 - A checker budget is only enforced at solver calls: budgeted checkers must take their solvers
   from `DeadlineSolverManager` (`blockCheckers` in `xcfa-cli` does), and no wrapper may turn a
   `DssBudgetExceededException` into a result or a checker failure.
-- Violation conditions are exact; a per-path condition may under-approximate, never
-  over-approximate.
+- Sent violation conditions are exact; a per-path condition may under-approximate, never
+  over-approximate. A `ViolationGeneralizer` generalization over-approximates, so it is only a
+  probe target: a probe's UNSAFE result is discarded, and a generalization never reaches a
+  message, a witness record or a path condition.
 - Every violation condition goes through `DssAuxVars.canonicalize`: repeated conditions are
   recognized by structural equality.
 - An undecided query of `DssPredicateOperators` throws `DssUndecidedQueryException`, never a

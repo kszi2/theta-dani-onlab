@@ -155,6 +155,20 @@ data class DssConfig(
     description = "Add an EXPL CEGAR block checker after --dss-checker-backends",
   )
   var explChecker: Boolean = false,
+  @Parameter(
+    names = ["--dss-generalize-violations"],
+    description =
+      "Before each block analysis, try to refute a generalization of the received violation " +
+        "conditions (GSpacer-style); it is only a probe, never sent or reported",
+  )
+  var generalizeViolations: Boolean = false,
+  @Parameter(
+    names = ["--dss-generalization-gas"],
+    description =
+      "--dss-generalize-violations: failed probes per sender and condition shape before that " +
+        "shape is no longer generalized",
+  )
+  var generalizationGas: Int = 2,
   @Parameter(names = ["--dss-worker-port"], hidden = true) var workerPort: Int = 0,
   @Parameter(names = ["--dss-worker-index"], hidden = true) var workerIndex: Int = 0,
   @Parameter(names = ["--dss-worker-blocks"], hidden = true)

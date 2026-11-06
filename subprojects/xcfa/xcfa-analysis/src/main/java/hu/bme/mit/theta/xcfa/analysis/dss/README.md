@@ -45,6 +45,8 @@ Only single-procedure programs and error-location reachability are supported.
 | `--dss-expl-checker` | off | Add an `EXPL` `CEGAR` checker after `--dss-checker-backends` |
 | `--dss-solver` | `Z3` | Solver of the block checkers and of DSS's own queries (`Z3:new` for `CONCURRENT`) |
 | `--dss-fallback-solver` | none | A block checker that throws is retried once with this solver |
+| `--dss-generalize-violations` | off | Before each analysis, try to refute a generalization of the received violation conditions (see [Generalized violation conditions](#generalized-violation-conditions)) |
+| `--dss-generalization-gas` | `2` | Failed probes per sender and condition shape before that shape is no longer generalized |
 
 A checker over its budget is stopped at its next solver call (`DssBudget.kt`) and retried in the
 next round, so a block never counts as safe unless some checker finished it. The checker that
@@ -98,6 +100,26 @@ has not sent anything yet counts as top; a block stops only when a sender repeat
 
 Termination is not guaranteed, in CPAchecker either: a loop block can keep refuting ever longer
 violation conditions while refinement finds new predicates.
+
+## Generalized violation conditions
+
+With `--dss-generalize-violations`, a block refutes the conditions a sender keeps sending one
+loop iteration longer in one go, following GSpacer's global guidance (Krishnan et al., *Global
+guidance for local generalization in model checking*, FMSD 2024). `ViolationGeneralizer` keeps
+every sender's conditions as cubes in linear normal form, clustered by shape. When the bounds of
+a shape drift, it conjectures their convex hull, widened in the direction of the drift (with the
+hull's parameters eliminated by Fourier-Motzkin), or else the cube without its drifting literals.
+For example, `x == -2 - k && n >= -1` for `k = 0, 1, 2` becomes `x <= -2 && n >= -1`.
+
+A generalization may contain states that reach no error, so it is only a probe. A start state is
+first analyzed against the received conditions or the generalization. If that run is SAFE, the
+received conditions are refuted from that start state, and its postcondition is used. If it is
+UNSAFE, the result is discarded and the exact analysis runs. A generalization is never sent,
+never enters a path condition or witness, and never causes an UNSAFE verdict. Each failed probe
+costs its shape gas.
+
+This helps where the refuting block is not on the cycle that produces the conditions. Blocks on
+the cycle start from their own summaries, which can be too weak to refute any generalization.
 
 ## Known limitations
 

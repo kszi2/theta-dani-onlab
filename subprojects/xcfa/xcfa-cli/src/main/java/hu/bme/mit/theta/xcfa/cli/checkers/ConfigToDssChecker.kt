@@ -204,6 +204,7 @@ fun getDssChecker(
         blockLocalPool = dssConfig.blockLocalPool,
         checkerFallback = true,
         solverFactory = dssSolverFactory,
+        generalizationGas = if (dssConfig.generalizeViolations) dssConfig.generalizationGas else 0,
       )
       .also { behaviors[block.id] = it }
   }
@@ -248,6 +249,7 @@ fun getDssChecker(
     } finally {
       // Block checkers register counterexample monitors globally; later CEGAR runs would see them
       MonitorCheckpoint.reset()
+      logBlockStatistics(behaviors.values, logger)
     }
 
   val witnesses =
@@ -272,6 +274,24 @@ fun getDssChecker(
       SafetyResult.unsafe(trace, EmptyProof.getInstance())
     }
   }
+}
+
+/** The block counters summed over every in-process block; worker processes keep their own. */
+private fun logBlockStatistics(behaviors: Collection<DssBlockBehavior>, logger: Logger) {
+  if (behaviors.isEmpty()) return
+  val totals = LinkedHashMap<String, Long>()
+  for (behavior in behaviors) {
+    for ((name, value) in behavior.statistics()) {
+      val number = value.toLongOrNull() ?: continue
+      totals.merge(name, number) { a, b -> if (name == "vcMaxAtoms") maxOf(a, b) else a + b }
+    }
+  }
+  if (totals.isEmpty()) return
+  logger.write(
+    Logger.Level.INFO,
+    "DSS block statistics: %s\n",
+    totals.entries.joinToString(" ") { "${it.key}=${it.value}" },
+  )
 }
 
 private fun stitchViolationPath(
