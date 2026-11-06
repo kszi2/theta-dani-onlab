@@ -161,6 +161,11 @@ public class SolverPool implements AutoCloseable {
         }
 
         @Override
+        public void interrupt() {
+            wrapped.interrupt();
+        }
+
+        @Override
         public void close() throws Exception {
             wrapped.close();
         }
