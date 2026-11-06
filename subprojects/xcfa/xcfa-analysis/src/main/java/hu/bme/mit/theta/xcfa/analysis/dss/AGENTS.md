@@ -21,6 +21,10 @@ message-passing network with its executors. The `--backend DSS` wiring lives in 
   `DssDeadline`'s watchdog while running): budgeted checkers must take their solvers from
   `DeadlineSolverManager` (`blockCheckers` in `xcfa-cli` does), and no wrapper may turn a
   `DssBudgetExceededException` into a result or a checker failure.
+- A `DssBlockCutRequest` must reach `getDssChecker`, which restarts with the block cut (`PROCESS`
+  rebuilds it by class name, and its workers redo the cuts from `DssConfig.workerCuts`).
+- A block cut must keep the block's paths: every piece takes all of the block's edges out of each
+  location it passes through, and a piece reaching an exit that has successors ends there.
 - Violation conditions are exact; a per-path condition may under-approximate, never
   over-approximate.
 - Every violation condition goes through `DssAuxVars.canonicalize`: repeated conditions are

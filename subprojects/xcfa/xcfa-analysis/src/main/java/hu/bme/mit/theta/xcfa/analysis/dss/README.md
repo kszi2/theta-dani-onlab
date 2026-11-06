@@ -42,6 +42,7 @@ Only single-procedure programs and error-location reachability are supported.
 | `--dss-reuse-block-precision` | off | Add the predicates of a block's earlier CEGAR runs to its next runs |
 | `--dss-block-local-pool` | off | Seed a block only with the pool conditions over at least one of its variables |
 | `--dss-checker-budget` | `0` | Milliseconds each checker gets in turn, 4-fold after every round (`0`: no budget); needs `PRIORITY` |
+| `--dss-cut-on-timeout` | off | A block whose round of checkers all run out of their budget is cut, and DSS starts over; needs `--dss-checker-budget` |
 | `--dss-expl-checker` | off | Add an `EXPL` `CEGAR` checker after `--dss-checker-backends` |
 | `--dss-solver` | `Z3` | Solver of the block checkers and of DSS's own queries (`Z3:new` for `CONCURRENT`) |
 | `--dss-fallback-solver` | none | A block checker that throws is retried once with this solver |
@@ -52,13 +53,20 @@ finished it. Only solvers that implement `SolverBase.interrupt` (Z3, `Z3:new`, J
 stopped mid-call; on the others, the checker stops at its next call. The checker that
 finished a block's last analysis starts its next one.
 
+With `--dss-cut-on-timeout`, a round that every checker runs out of cuts the block instead of
+growing the budget (`BlockCut.kt`): at one location, as in `MIN_CUT`, and also between the edges
+leaving the entry or the cut location that share no location, so a loop head splits into the loop
+and its exit. The whole run then starts over on the new block graph, as the other blocks'
+summaries were computed for the old one. A block without a cut gets the growing budgets. A loop
+cut this way becomes a cycle of blocks, on which DSS need not terminate (see below).
+
 The executor defaults to `SEQUENTIAL` because the default legacy Z3 binding crashes natively when
 used by several threads. `Z3:new` is thread-safe, but its interpolation fails on some C arithmetic.
 `PROCESS` runs any solver in parallel, at the price of one JVM per worker.
 
 ## Packages
 
-* `dss.decomposition` — `Block`, `BlockGraph` and the decompositions.
+* `dss.decomposition` — `Block`, `BlockGraph`, the decompositions and the block cut.
 * `dss.analysis` — block extraction (`extractBlockXcfa`), violation conditions
   (`computeViolationCondition`, `DssAuxVars`), postconditions, solver-backed operators,
   precisions, the checker roster.

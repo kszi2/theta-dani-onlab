@@ -57,6 +57,7 @@ import hu.bme.mit.theta.xcfa.analysis.dss.actor.serveDssBlocks
 import hu.bme.mit.theta.xcfa.analysis.dss.actor.stitchViolationPath
 import hu.bme.mit.theta.xcfa.analysis.dss.actor.violationTrace
 import hu.bme.mit.theta.xcfa.analysis.dss.analysis.CheckerFactory
+import hu.bme.mit.theta.xcfa.analysis.dss.analysis.DssBlockCutRequest
 import hu.bme.mit.theta.xcfa.analysis.dss.analysis.DssCheckerRoster
 import hu.bme.mit.theta.xcfa.analysis.dss.analysis.DssCheckerSelectionStrategy
 import hu.bme.mit.theta.xcfa.analysis.dss.analysis.DssUndecidedQueryException
@@ -77,6 +78,7 @@ import hu.bme.mit.theta.xcfa.analysis.dss.decomposition.MergeBlockDecomposition
 import hu.bme.mit.theta.xcfa.analysis.dss.decomposition.MinCutDecomposition
 import hu.bme.mit.theta.xcfa.analysis.dss.decomposition.SelfLoopAbsorbingDecomposition
 import hu.bme.mit.theta.xcfa.analysis.dss.decomposition.SingleBlockDecomposition
+import hu.bme.mit.theta.xcfa.analysis.dss.decomposition.cut
 import hu.bme.mit.theta.xcfa.analysis.dss.decomposition.getStatistics
 import hu.bme.mit.theta.xcfa.analysis.proof.LocationInvariants
 import hu.bme.mit.theta.xcfa.cli.XcfaCli
@@ -143,8 +145,9 @@ fun getDssChecker(
       DssDecomposition.MIN_CUT_ACYCLIC -> MinCutDecomposition(loopHandling = CutLoopHandling.FORBID)
       DssDecomposition.NONE -> SingleBlockDecomposition
     }
-  val blockGraph: BlockGraph = decomposition.decompose(procedure)
-  blockGraph.checkConsistency()
+  val cuts = dssConfig.workerCuts.toMutableList()
+  var blockGraph: BlockGraph =
+    cuts.fold(decomposition.decompose(procedure).also { it.checkConsistency() }, ::cutToRestart)
   logger.write(Logger.Level.INFO, "DSS block graph statistics: %s\n", blockGraph.getStatistics())
 
   require(dssConfig.checkerBackends.isNotEmpty()) {
@@ -159,6 +162,10 @@ fun getDssChecker(
       dssConfig.checkerSelection == DssCheckerSelectionMethod.PRIORITY
   ) {
     "--dss-checker-budget orders the checkers itself, so it needs --dss-checker-selection PRIORITY"
+  }
+  require(!dssConfig.cutOnTimeout || dssConfig.checkerBudgetMs > 0) {
+    "--dss-cut-on-timeout cuts blocks that the checkers run out of their budget on, so it needs " +
+      "--dss-checker-budget"
   }
   val blockLogger = BlockAnalysisLogger(logger)
   val solver =
@@ -204,6 +211,7 @@ fun getDssChecker(
         blockLocalPool = dssConfig.blockLocalPool,
         checkerFallback = true,
         solverFactory = dssSolverFactory,
+        cutOnTimeout = dssConfig.cutOnTimeout,
       )
       .also { behaviors[block.id] = it }
   }
@@ -221,34 +229,50 @@ fun getDssChecker(
   }
 
   val processWitnesses = ConcurrentHashMap<String, DssBlockWitness>()
-  val dssResult =
+  var dssResult: DssResult? = null
+  // A cut starts the run over: the other blocks' summaries were computed for the old graph
+  while (dssResult == null) {
+    behaviors.clear()
+    processWitnesses.clear()
     try {
-      when (dssConfig.executor) {
-        DssExecutor.CONCURRENT ->
-          runDssActors(
-            blockGraph,
-            behaviorFor = behaviorFor,
-            maxParallelBlocks = dssConfig.maxParallelBlocks,
-          )
-        DssExecutor.SEQUENTIAL -> runDssActorsSequentially(blockGraph, behaviorFor = behaviorFor)
-        DssExecutor.PROCESS ->
-          runDssActorsInProcesses(
-            blockGraph,
-            getDssWorkerLauncher(config, dssConfig),
-            DssExprCodec(xcfa),
-            witnesses = processWitnesses,
-          )
-      }
+      dssResult =
+        when (dssConfig.executor) {
+          DssExecutor.CONCURRENT ->
+            runDssActors(
+              blockGraph,
+              behaviorFor = behaviorFor,
+              maxParallelBlocks = dssConfig.maxParallelBlocks,
+            )
+          DssExecutor.SEQUENTIAL -> runDssActorsSequentially(blockGraph, behaviorFor = behaviorFor)
+          DssExecutor.PROCESS ->
+            runDssActorsInProcesses(
+              blockGraph,
+              getDssWorkerLauncher(config, dssConfig.copy(workerCuts = cuts.toList())),
+              DssExprCodec(xcfa),
+              witnesses = processWitnesses,
+            )
+        }
     } catch (e: RuntimeException) {
-      val undecided =
-        generateSequence<Throwable>(e) { it.cause }.firstOrNull { it is DssUndecidedQueryException }
-          ?: throw e
-      logger.write(Logger.Level.RESULT, "%s\n", undecided.message)
-      return@SafetyChecker SafetyResult.unknown()
+      val causes = generateSequence<Throwable>(e) { it.cause }
+      val cut = causes.filterIsInstance<DssBlockCutRequest>().firstOrNull()
+      if (cut == null) {
+        val undecided = causes.firstOrNull { it is DssUndecidedQueryException } ?: throw e
+        logger.write(Logger.Level.RESULT, "%s\n", undecided.message)
+        return@SafetyChecker SafetyResult.unknown()
+      }
+      blockGraph = cutToRestart(blockGraph, cut.blockId)
+      cuts += cut.blockId
+      logger.write(
+        Logger.Level.INFO,
+        "DSS: every checker ran out of its budget on block %s, starting over with it cut: %s\n",
+        cut.blockId,
+        blockGraph.getStatistics(),
+      )
     } finally {
       // Block checkers register counterexample monitors globally; later CEGAR runs would see them
       MonitorCheckpoint.reset()
     }
+  }
 
   val witnesses =
     if (dssConfig.executor == DssExecutor.PROCESS) processWitnesses
@@ -273,6 +297,9 @@ fun getDssChecker(
     }
   }
 }
+
+private fun cutToRestart(blockGraph: BlockGraph, id: String): BlockGraph =
+  checkNotNull(blockGraph.cut(id)) { "DSS block $id was to be cut, but it has no cut" }
 
 private fun stitchViolationPath(
   blockGraph: BlockGraph,

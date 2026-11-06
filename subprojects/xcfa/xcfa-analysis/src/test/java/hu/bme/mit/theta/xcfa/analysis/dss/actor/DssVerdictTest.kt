@@ -28,6 +28,7 @@ import hu.bme.mit.theta.xcfa.analysis.dss.decomposition.LinearBlockDecomposition
 import hu.bme.mit.theta.xcfa.analysis.dss.decomposition.MergeBlockDecomposition
 import hu.bme.mit.theta.xcfa.analysis.dss.decomposition.MinCutDecomposition
 import hu.bme.mit.theta.xcfa.analysis.dss.decomposition.SelfLoopAbsorbingDecomposition
+import hu.bme.mit.theta.xcfa.analysis.dss.decomposition.cut
 import hu.bme.mit.theta.xcfa.analysis.dss.ensureDefaultSolversRegistered
 import hu.bme.mit.theta.xcfa.cli.checkers.getCegarChecker
 import hu.bme.mit.theta.xcfa.cli.params.getDefaultPredCegarConfig
@@ -105,6 +106,10 @@ class DssVerdictTest {
         }
         .stream()
     }
+
+    @JvmStatic
+    fun cutCases(): Stream<Arguments> =
+      programs.keys.flatMap { p -> listOf(true, false).map { Arguments.of(p, it) } }.stream()
 
     private fun branchXcfa(safe: Boolean): XCFA =
       xcfa("branch") {
@@ -339,6 +344,17 @@ class DssVerdictTest {
     val xcfa = programs.getValue(program)(safe)
     val blockGraph = decomposition.decompose(xcfa.procedures.single())
     assertEquals(expected(safe), checkDecomposed(xcfa, blockGraph))
+  }
+
+  /** As `--dss-cut-on-timeout` cuts blocks, of the decomposition `EMERGENT` runs DSS with. */
+  @ParameterizedTest(name = "{0}, safe={1}")
+  @MethodSource("cutCases")
+  fun `cutting every block keeps the verdict`(program: String, safe: Boolean) {
+    val xcfa = programs.getValue(program)(safe)
+    val decomposed = Decomposition.MIN_CUT_ABSORB.decompose(xcfa.procedures.single())
+    val cut = decomposed.blocks.map { it.id }.sorted().fold(decomposed) { g, id -> g.cut(id) ?: g }
+    assertTrue(cut.blocks.size > decomposed.blocks.size) { "nothing to cut in $decomposed" }
+    assertEquals(expected(safe), checkDecomposed(xcfa, cut))
   }
 
   @Test
