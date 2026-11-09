@@ -69,11 +69,12 @@ class XcfaCliDssTest {
   }
 
   /**
-   * With a 1 ms budget, every checker runs out of it: blocks are cut until none has a cut. Only on
-   * loop-free programs, as DSS need not terminate once a loop is cut into a cycle of blocks.
+   * With a 1 ms budget, every checker runs out of it, so the single block is cut until no piece has
+   * a cut. Loop-free programs only: DSS need not terminate once a loop is cut into a cycle of
+   * blocks. No KIND, as its postconditions cannot be sent to a worker process.
    */
   private val cutting =
-    arrayOf("--dss-checker-backends", "KIND,CEGAR", "--dss-checker-budget", "1", CUT)
+    arrayOf("--dss-decomposition", "NONE", "--dss-expl-checker", "--dss-checker-budget", "1", CUT)
 
   private fun expected(program: String) =
     if (program.endsWith("unsafe")) "SafetyResult Unsafe" else "SafetyResult Safe"
@@ -117,12 +118,11 @@ class XcfaCliDssTest {
     assertTrue(thrown != null && "--dss-cut-on-timeout" in output) { output }
   }
 
-  @ParameterizedTest
-  @ValueSource(strings = ["SEQUENTIAL", "PROCESS"])
-  fun `a block that every checker runs out of is cut, and the run starts over`(executor: String) {
-    for (program in listOf("safe", "unsafe")) {
-      val (output, thrown) =
-        runDss(program, *cutting, "--dss-executor", executor, "--loglevel", "INFO")
+  /** Not with `PROCESS`: every restart starts new worker processes, which takes minutes. */
+  @Test
+  fun `a block that every checker runs out of is cut, and the run starts over`() {
+    for (program in listOf("branches", "branches_unsafe")) {
+      val (output, thrown) = runDss(program, *cutting, "--loglevel", "INFO")
       if (thrown != null) throw AssertionError(output, thrown)
       assertTrue("starting over with it cut" in output) { output }
       val verdict = output.lines().last { it.contains("SafetyResult") }

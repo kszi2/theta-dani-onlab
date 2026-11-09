@@ -14,6 +14,9 @@ Suspected bugs and smells noticed while working on something else. Delete an ent
   `DssPredicateOperators.isLeq` checks `A && !B` with those variables free, which is not `A`
   implying `exists F. B`; `statesEqual` may then never see a repeated postcondition, so a block
   cycle proven by KIND could keep re-analyzing. Unverified; it matters more with KIND first.
+- **KIND block postconditions cannot reach a DSS worker process.** They mention the monolithic
+  adapter's location variable (`___loc_:0`, from `__loc_`), which `DssExprCodec` refuses, so
+  `--dss-executor PROCESS` with a `KIND` block checker fails once KIND proves a block.
 - **MathSAT 5.6.15 crashes the JVM on some nonlinear integer tasks.** SIGSEGV in
   `msat::QNumber::normalize` (`libmathsat5j.so`) on sv-benchmarks `divbin*`, `prod4br-ll*` and
   `sqrt1-ll*` under DSS. Earlier runs on 5.6.11 (before the JavaSMT 6 bump) did not crash there,
