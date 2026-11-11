@@ -32,6 +32,7 @@ import hu.bme.mit.theta.core.model.ImmutableValuation
 import hu.bme.mit.theta.core.type.abstracttype.AbstractExprs.Eq
 import hu.bme.mit.theta.core.utils.ExprUtils
 import hu.bme.mit.theta.frontend.ParseContext
+import hu.bme.mit.theta.frontend.transformation.grammar.preprocess.ArithmeticTrait
 import hu.bme.mit.theta.graphsolver.patterns.constraints.MCM
 import hu.bme.mit.theta.solver.SolverFactory
 import hu.bme.mit.theta.solver.SolverManager
@@ -116,6 +117,19 @@ fun checkDssSupports(property: XcfaProperty) =
       "${property.verifiedProperty} (input property ${property.inputProperty})"
   }
 
+/**
+ * `--dss-nonlinear-solver` takes over a program with nonlinear integer arithmetic and neither
+ * floats nor bitwise operations; `--dss-solver` is then what a failing checker is retried with.
+ */
+internal fun DssConfig.forArithmetic(traits: Set<ArithmeticTrait>): DssConfig {
+  val nonlinear = nonlinearSolver ?: return this
+  val applies =
+    ArithmeticTrait.NONLIN_INT in traits &&
+      ArithmeticTrait.FLOAT !in traits &&
+      ArithmeticTrait.BITWISE !in traits
+  return if (applies) copy(solver = nonlinear, fallbackSolver = solver ?: fallbackSolver) else this
+}
+
 /** `--backend DSS`: distributed summary synthesis (`xcfa-analysis's dss/README.md`). */
 fun getDssChecker(
   xcfa: XCFA,
@@ -124,7 +138,14 @@ fun getDssChecker(
   parseContext: ParseContext,
   logger: Logger,
 ): SafetyChecker<Proof, Cex, XcfaPrec<*>> = SafetyChecker { _ ->
-  val dssConfig = config.backendConfig.specConfig as DssConfig
+  val dssConfig =
+    (config.backendConfig.specConfig as DssConfig).forArithmetic(parseContext.arithmeticTraits)
+  logger.write(
+    Logger.Level.INFO,
+    "DSS solver: %s, fallback: %s" + System.lineSeparator(),
+    dssConfig.solver,
+    dssConfig.fallbackSolver,
+  )
   checkDssSupports(config.inputConfig.property)
   val procedure =
     xcfa.procedures.singleOrNull()

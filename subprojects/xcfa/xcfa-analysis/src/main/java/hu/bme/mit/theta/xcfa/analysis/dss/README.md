@@ -46,6 +46,7 @@ Only single-procedure programs and error-location reachability are supported.
 | `--dss-expl-checker` | off | Add an `EXPL` `CEGAR` checker after `--dss-checker-backends` |
 | `--dss-solver` | `Z3` | Solver of the block checkers and of DSS's own queries (`Z3:new` for `CONCURRENT`) |
 | `--dss-fallback-solver` | none | A block checker that throws is retried once with this solver |
+| `--dss-nonlinear-solver` | none | Replaces `--dss-solver` for a program with nonlinear integer arithmetic and neither floats nor bitwise operations; `--dss-solver` then becomes the fallback |
 
 A checker over its budget is stopped (`DssBudget.kt`): a watchdog interrupts its running solver
 call, and it is retried in the next round, so a block never counts as safe unless some checker
